@@ -1,0 +1,404 @@
+
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+# 
+#     http://www.apache.org/licenses/LICENSE-2.0
+# 
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: selfsigning-issuer
+spec:
+  selfSigned: {}
+---
+#ingress-ca CA and Issuer using this CA
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: ingress-ca
+spec:
+  secretName: ingress-ca
+  commonName: "ingress-ca"
+  usages:
+  - digital signature
+  - key encipherment
+  - cert sign
+  isCA: true
+  duration: 87600h # 10 years
+  renewBefore: 720h # 30 days
+  privateKey:
+    rotationPolicy: Always
+  issuerRef:
+    name: selfsigning-issuer
+    kind: Issuer
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: ingress-issuer
+spec:
+  ca:
+    secretName: ingress-ca
+---
+#Management Internal Certificates
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: management-client
+  labels: {
+    app.kubernetes.io/instance: "management",
+    app.kubernetes.io/managed-by: "ibm-apiconnect",
+    app.kubernetes.io/name: "management-client"
+  }
+spec:
+  commonName: management-client
+  secretName: management-client
+  dnsNames:
+  - "*.<namespace>"
+  - "*.<namespace>.svc"
+  - "*.management-client.<namespace>.svc"
+  - "management-client"
+  issuerRef:
+    name: ingress-issuer
+  usages:
+  - "client auth"
+  - "signing"
+  - "key encipherment"
+  duration: 17520h # 2 years
+  renewBefore: 720h # 30 days
+  privateKey:
+    rotationPolicy: Always
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: management-server
+  labels: {
+    app.kubernetes.io/instance: "management",
+    app.kubernetes.io/managed-by: "ibm-apiconnect",
+    app.kubernetes.io/name: "management-server"
+  }
+spec:
+  commonName: management-server
+  secretName: management-server
+  dnsNames:
+  - "*.<namespace>"
+  - "*.<namespace>.svc"
+  - "*.management-server.<namespace>.svc"
+  - "management-server"
+  issuerRef:
+    name: ingress-issuer
+  usages:
+  - "server auth"
+  - "signing"
+  - "key encipherment"
+  duration: 17520h # 2 years
+  renewBefore: 720h # 30 days
+  privateKey:
+    rotationPolicy: Always
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: db-server-certificate
+  labels: {
+    app.kubernetes.io/instance: "management",
+    app.kubernetes.io/managed-by: "ibm-apiconnect",
+    app.kubernetes.io/name: "db-server-certificate"
+  }
+spec:
+  commonName: management-<site_name>-db-rw
+  secretName: db-server-certificate
+  dnsNames:
+    - "*.<namespace>"
+    - "*.<namespace>.svc"
+    - "*.management-<site_name>-db-rw.<namespace>.svc"
+    - "management-<site_name>-db-rw"
+    - "management-<site_name>-postgres"
+  issuerRef:
+    name: ingress-issuer
+  usages:
+  - "server auth"
+  - "signing"
+  - "key encipherment"
+  duration: 17520h # 2 years
+  renewBefore: 720h # 30 days
+  privateKey:
+    rotationPolicy: Always
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: db-client-replication
+  labels: {
+    app.kubernetes.io/instance: "management",
+    app.kubernetes.io/managed-by: "ibm-apiconnect",
+    app.kubernetes.io/name: "db-client-replication"
+  }
+spec:
+  commonName: replication
+  secretName: db-client-replication
+  dnsNames:
+    - "*.<namespace>"
+    - "*.<namespace>.svc"
+    - "replication.<namespace>.svc"
+    - "replication"
+  issuerRef:
+    name: ingress-issuer
+  usages:
+  - "client auth"
+  - "signing"
+  - "key encipherment"
+  duration: 17520h # 2 years
+  renewBefore: 720h # 30 days
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: management-natscluster-mgmt
+  labels: {
+    app.kubernetes.io/instance: "management",
+    app.kubernetes.io/managed-by: "ibm-apiconnect",
+    app.kubernetes.io/name: "management-natscluster-mgmt"
+  }
+spec:
+  commonName: management-natscluster-mgmt
+  secretName: management-natscluster-mgmt
+  dnsNames:
+    - "*.<namespace>"
+    - "*.<namespace>.svc"
+    - "*.management-natscluster-mgmt.<namespace>.svc"
+    - "management-natscluster-mgmt"
+  issuerRef:
+    name: ingress-issuer
+  usages:
+  - "server auth"
+  - "client auth"
+  - "signing"
+  - "key encipherment"
+  duration: 17520h # 2 years
+  renewBefore: 720h # 30 days
+  privateKey:
+    rotationPolicy: Always
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: db-client-postgres
+  labels: {
+    app.kubernetes.io/instance: "management",
+    app.kubernetes.io/managed-by: "ibm-apiconnect",
+    app.kubernetes.io/name: "db-client-postgres"
+  }
+spec:
+  commonName: postgres
+  secretName: db-client-postgres
+  dnsNames:
+    - "*.<namespace>"
+    - "*.<namespace>.svc"
+    - "postgres.<namespace>.svc"
+    - "postgres"
+  issuerRef:
+    name: ingress-issuer
+  usages:
+  - "client auth"
+  - "signing"
+  - "key encipherment"
+  duration: 17520h # 2 years
+  renewBefore: 720h # 30 days
+  privateKey:
+    rotationPolicy: Always
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: db-client-apicuser
+  labels: {
+    app.kubernetes.io/instance: "management",
+    app.kubernetes.io/managed-by: "ibm-apiconnect",
+    app.kubernetes.io/name: "db-client-apicuser"
+  }
+spec:
+  commonName: apicuser
+  secretName: db-client-apicuser
+  dnsNames:
+    - "*.<namespace>"
+    - "*.<namespace>.svc"
+    - "apicuser.<namespace>.svc"
+    - "apicuser"
+  issuerRef:
+    name: ingress-issuer
+  usages:
+  - "client auth"
+  - "signing"
+  - "key encipherment"
+  duration: 17520h # 2 years
+  renewBefore: 720h # 30 days
+  privateKey:
+    rotationPolicy: Always
+---
+#Analytics Internal Certificates
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: analytics-client
+  labels: {
+    app.kubernetes.io/instance: "analytics",
+    app.kubernetes.io/managed-by: "ibm-apiconnect",
+    app.kubernetes.io/name: "analytics-client"
+  }
+spec:
+  commonName: analytics-client
+  secretName: analytics-client
+  dnsNames:
+  - "*.<namespace>"
+  - "*.<namespace>.svc"
+  - "*.analytics-client.<namespace>.svc"
+  - "analytics-client"
+  issuerRef:
+    name: ingress-issuer
+  usages:
+  - "client auth"
+  - "signing"
+  - "key encipherment"
+  duration: 17520h # 2 years
+  renewBefore: 720h # 30 days
+  privateKey:
+    rotationPolicy: Always
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: analytics-server
+  labels: {
+    app.kubernetes.io/instance: "analytics",
+    app.kubernetes.io/managed-by: "ibm-apiconnect",
+    app.kubernetes.io/name: "analytics-server"
+  }
+spec:
+  commonName: analytics-server
+  secretName: analytics-server
+  dnsNames:
+  - "*.<namespace>"
+  - "*.<namespace>.svc"
+  - "*.analytics-server.<namespace>.svc"
+  - "analytics-server"
+  - "analytics-director"
+  - "analytics-ingestion"
+  - "analytics-mtls-gw"
+  - "analytics-storage"
+  - "analytics-storage-os-master"
+  - "analytics-warehouse"
+  issuerRef:
+    name: ingress-issuer
+  usages:
+  - "server auth"
+  - "signing"
+  - "key encipherment"
+  duration: 17520h # 2 years
+  renewBefore: 720h # 30 days
+  privateKey:
+    rotationPolicy: Always
+---
+#Portal Internal Certificates
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: portal-client
+  labels: {
+    app.kubernetes.io/instance: "portal",
+    app.kubernetes.io/managed-by: "ibm-apiconnect",
+    app.kubernetes.io/name: "portal-client"
+  }
+spec:
+  commonName: portal-client
+  secretName: portal-client
+  dnsNames:
+  - "*.<namespace>"
+  - "*.<namespace>.svc"
+  - "*.portal-client.<namespace>.svc"
+  - "portal-client"
+  issuerRef:
+    name: ingress-issuer
+  usages:
+  - "client auth"
+  - "signing"
+  - "key encipherment"
+  duration: 17520h # 2 years
+  renewBefore: 720h # 30 days
+  privateKey:
+    rotationPolicy: Always
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: portal-server
+  labels: {
+    app.kubernetes.io/instance: "portal",
+    app.kubernetes.io/managed-by: "ibm-apiconnect",
+    app.kubernetes.io/name: "portal-server"
+  }
+spec:
+  commonName: portal-server
+  secretName: portal-server
+  dnsNames:
+  - "*.<namespace>"
+  - "*.<namespace>.svc"
+  - "*.portal-server.<namespace>.svc"
+  - "portal-server"
+  - "*.<namespace>.svc.cluster.local"
+  - "*.portal-server.<namespace>.svc.cluster.local"
+  - "*.portal-<site name>-db-all.<namespace>.svc"
+  - "*.portal-<site name>-www-all.<namespace>.svc"
+  - "*.portal-<site name>-db-all.<namespace>.svc.cluster.local"
+  - "*.portal-<site name>-www-all.<namespace>.svc.cluster.local"
+  - "portal-db"
+  issuerRef:
+    name: ingress-issuer
+  usages:
+  - "server auth"
+  - "signing"
+  - "key encipherment"
+  duration: 17520h # 2 years
+  renewBefore: 720h # 30 days
+  privateKey:
+    rotationPolicy: Always
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: management-s3proxy-all
+  labels: {
+    app.kubernetes.io/instance: "management",
+    app.kubernetes.io/managed-by: "ibm-apiconnect",
+    app.kubernetes.io/name: "management-s3proxy-all"
+  }
+spec:
+  commonName: management-s3proxy-all
+  secretName: management-s3proxy-all
+  dnsNames:
+  - "*.<namespace>"
+  - "*.<namespace>.svc"
+  - "*.management-s3proxy-all.<namespace>.svc"
+  - "management-s3proxy-all"
+  issuerRef:
+    name: ingress-issuer
+  usages:
+  - "server auth"
+  - "signing"
+  - "key encipherment"
+  duration: 17520h # 2 years
+  renewBefore: 720h # 30 days
+  privateKey:
+    rotationPolicy: Always

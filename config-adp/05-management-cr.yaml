@@ -1,0 +1,80 @@
+
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+
+apiVersion: management.apiconnect.ibm.com/v1beta1
+kind: ManagementCluster
+metadata:
+  name: management
+spec:
+  version: 10.0.8.6
+  imagePullSecrets:
+  - apic-registry-secret
+  imageRegistry: cp.icr.io/cp
+  profile: n1xc4.m16
+  portal:
+    admin:
+      secretName: portal-admin-client
+  analytics:
+    ingestion:
+      secretName: analytics-ingestion-client
+  gateway:
+    client:
+      secretName: gateway-client-client
+  cloudManagerEndpoint:
+    ingressClassName: traefik
+    annotations:
+      cert-manager.io/issuer: ingress-issuer
+    hosts:
+    - name: admin.apic.adp.example.com
+      secretName: cm-endpoint
+  apiManagerEndpoint:
+    ingressClassName: traefik
+    annotations:
+      cert-manager.io/issuer: ingress-issuer
+    hosts:
+    - name: manager.apic.adp.example.com
+      secretName: apim-endpoint
+  consumerCatalogEndpoint:
+    ingressClassName: traefik
+    annotations:
+      cert-manager.io/issuer: ingress-issuer
+    hosts:
+    - name: consumer-catalog.apic.adp.example.com
+      secretName: consumer-catalog-endpoint
+  platformAPIEndpoint:
+    ingressClassName: traefik
+    annotations:
+      cert-manager.io/issuer: ingress-issuer
+    hosts:
+    - name: api.apic.adp.example.com
+      secretName: api-endpoint
+  consumerAPIEndpoint:
+    ingressClassName: traefik
+    annotations:
+      cert-manager.io/issuer: ingress-issuer
+    hosts:
+    - name: consumer.apic.adp.example.com
+      secretName: consumer-endpoint
+  databaseVolumeClaimTemplate:
+    storageClassName: nfs-ssd
+  microServiceSecurity: certManager
+  certManagerIssuer:
+    name: selfsigning-issuer
+    kind: Issuer
+  license:
+    accept: true
+    use: production
+    license: L-HTFS-UAXYM3
