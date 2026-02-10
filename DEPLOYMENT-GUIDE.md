@@ -104,6 +104,53 @@ Then transfer to the server:
 
     scp E:\apic\apiconnect-image-tool-10.0.8.6.tar.gz demo01:/home/administrator/git/demos/apic-deployment/
 
+### Using s3cmd for File Transfer (Optional)
+
+For large file transfers, `s3cmd` can be used with S3-compatible storage (DigitalOcean Spaces, AWS S3, MinIO, etc.) as an alternative to `scp`.
+
+**Install:**
+
+    sudo apt install s3cmd
+
+**Configure (DigitalOcean Spaces example):**
+
+    s3cmd --configure \
+      --host=ams3.digitaloceanspaces.com \
+      --host-bucket="%(bucket)s.ams3.digitaloceanspaces.com" \
+      --access_key=YOUR_ACCESS_KEY \
+      --secret_key=YOUR_SECRET_KEY
+
+This saves a config file at `~/.s3cfg`. To use a named config (e.g., for multiple providers):
+
+    s3cmd --configure -c ~/do-tor1.s3cfg
+
+**Upload:**
+
+    s3cmd -c ~/do-tor1.s3cfg put --progress \
+      apiconnect-image-tool-10.0.8.6.tar.gz \
+      s3://bucket-name/apic/apiconnect-image-tool-10.0.8.6.tar.gz
+
+**Download:**
+
+    s3cmd -c ~/do-tor1.s3cfg get --progress \
+      s3://bucket-name/apic/apiconnect-image-tool-10.0.8.6.tar.gz \
+      ./apiconnect-image-tool-10.0.8.6.tar.gz
+
+**Other useful commands:**
+
+    # List buckets
+    s3cmd -c ~/do-tor1.s3cfg ls
+
+    # List files in bucket
+    s3cmd -c ~/do-tor1.s3cfg ls s3://bucket-name/apic/
+
+    # Upload a directory recursively
+    s3cmd -c ~/do-tor1.s3cfg put -r --progress ./artifacts/ s3://bucket-name/apic/
+
+    # For large files, use multipart upload with larger chunks
+    s3cmd -c ~/do-tor1.s3cfg put --progress --multipart-chunk-size-mb=50 \
+      largefile.tar.gz s3://bucket-name/apic/
+
 ## Step 8: Mirror Images to Harbor (TODO)
 
 ### 8a. Load image tool into Docker
