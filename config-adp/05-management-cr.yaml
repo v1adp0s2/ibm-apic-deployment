@@ -21,8 +21,8 @@ metadata:
 spec:
   version: 10.0.8.6
   imagePullSecrets:
-  - apic-registry-secret
-  imageRegistry: cp.icr.io/cp
+  - harbor-registry-secret
+  imageRegistry: harbor.adp.example.com/apic
   profile: n1xc4.m16
   portal:
     admin:

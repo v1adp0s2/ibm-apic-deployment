@@ -895,10 +895,10 @@ spec:
         - name: APPLIANCE
           value: "false"
         - name: IMAGE_REGISTRY
-          value: cp.icr.io/cp
+          value: harbor.adp.example.com/apic
         - name: ENABLE_PPROF
           value: "false"
-        image: cp.icr.io/cp/ibm-apiconnect-operator@sha256:578a4ac8a0d0e99f630a46b675640e7475033f9b005a6fdf48d1f4ead6c5f2d4
+        image: harbor.adp.example.com/apic/ibm-apiconnect-operator@sha256:578a4ac8a0d0e99f630a46b675640e7475033f9b005a6fdf48d1f4ead6c5f2d4
         name: ibm-apiconnect
         ports:
         - containerPort: 9443
@@ -926,7 +926,7 @@ spec:
         - mountPath: /extern-versions
           name: extern-versions
       imagePullSecrets:
-      - name: apic-registry-secret
+      - name: harbor-registry-secret
       initContainers:
       - args:
         - webhook-init
@@ -939,7 +939,7 @@ spec:
           value: ibm-apiconnect-mutating-webhook-configuration
         - name: VALIDATING_WEBHOOK
           value: ibm-apiconnect-validating-webhook-configuration
-        image: cp.icr.io/cp/ibm-apiconnect-operator@sha256:578a4ac8a0d0e99f630a46b675640e7475033f9b005a6fdf48d1f4ead6c5f2d4
+        image: harbor.adp.example.com/apic/ibm-apiconnect-operator@sha256:578a4ac8a0d0e99f630a46b675640e7475033f9b005a6fdf48d1f4ead6c5f2d4
         name: webhook
         resources:
           limits:
@@ -979,7 +979,7 @@ spec:
             fieldRef:
               apiVersion: v1
               fieldPath: metadata.uid
-        image: cp.icr.io/cp/ibm-apiconnect-operator@sha256:578a4ac8a0d0e99f630a46b675640e7475033f9b005a6fdf48d1f4ead6c5f2d4
+        image: harbor.adp.example.com/apic/ibm-apiconnect-operator@sha256:578a4ac8a0d0e99f630a46b675640e7475033f9b005a6fdf48d1f4ead6c5f2d4
         name: webhook-delete
         resources:
           limits:

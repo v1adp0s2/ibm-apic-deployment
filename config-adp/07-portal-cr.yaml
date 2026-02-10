@@ -19,50 +19,46 @@ kind: PortalCluster
 metadata:
   name: portal
 spec:
-  version: $APP_PRODUCT_VERSION
-  profile: $PROFILE
+  version: 10.0.8.6
+  profile: n1xc4.m16
   imagePullSecrets:
-    - $SECRET_NAME
-  imageRegistry: $DOCKER_REGISTRY
+    - harbor-registry-secret
+  imageRegistry: harbor.adp.example.com/apic
   mgmtPlatformEndpointCASecret:
-    secretName: $PLATFORM_CA_SECRET # Usually ingress-ca
+    secretName: ingress-ca
   mgmtConsumerEndpointCASecret:
-    secretName: $CONSUMER_CA_SECRET # Usually ingress-ca
-  #mgmtPlatformEndpointSvcCASecret:
-  #  secretName:  # Usually management-ca
-  #mgmtConsumerEndpointSvcCASecret:
-  #  secretName:  # Usually management-ca  
+    secretName: ingress-ca
   portalAdminEndpoint:
-    #ingressClassName: $INGRESS_CLASS
+    ingressClassName: traefik
     annotations:
       cert-manager.io/issuer: ingress-issuer
     hosts:
-    - name: api.portal.$STACK_HOST
+    - name: api.portal.apic.adp.example.com
       secretName: portal-admin
   portalUIEndpoint:
-    #ingressClassName: $INGRESS_CLASS
+    ingressClassName: traefik
     annotations:
       cert-manager.io/issuer: ingress-issuer
     hosts:
-    - name: portal.$STACK_HOST
+    - name: portal.apic.adp.example.com
       secretName: portal-web
   databaseVolumeClaimTemplate:
-    storageClassName: $STORAGE_CLASS
+    storageClassName: nfs-ssd
     volumeSize: 64Gi
   databaseLogsVolumeClaimTemplate:
-    storageClassName: $STORAGE_CLASS
+    storageClassName: nfs-ssd
     volumeSize: 12Gi
   webVolumeClaimTemplate:
-    storageClassName: $STORAGE_CLASS
+    storageClassName: nfs-ssd
     volumeSize: 64Gi
   backupVolumeClaimTemplate:
-    storageClassName: $STORAGE_CLASS
+    storageClassName: nfs-ssd
     volumeSize: 15Gi
   adminVolumeClaimTemplate:
-    storageClassName: $STORAGE_CLASS
+    storageClassName: nfs-ssd
     volumeSize: 6Gi
   certVolumeClaimTemplate:
-    storageClassName: $STORAGE_CLASS
+    storageClassName: nfs-ssd
     volumeSize: 4Gi
   adminClientSubjectDN: CN=portal-admin-client,O=cert-manager
   microServiceSecurity: certManager
@@ -70,7 +66,7 @@ spec:
     name: selfsigning-issuer
     kind: Issuer
   license:
-    accept: false
+    accept: true
     use: production
-    license: ''
+    license: L-HTFS-UAXYM3
   mtlsValidateClient: true

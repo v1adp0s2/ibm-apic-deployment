@@ -3,9 +3,9 @@
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
-# 
+#
 #     http://www.apache.org/licenses/LICENSE-2.0
-# 
+#
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -19,49 +19,42 @@ kind: GatewayCluster
 metadata:
   name: gwv6
 spec:
-  version: $APP_PRODUCT_VERSION
-  profile: $PROFILE
+  version: 10.0.8.6
+  profile: n1xc4.m16
   imagePullSecrets:
-  - $SECRET_NAME
-  imageRegistry: $DOCKER_REGISTRY
+  - harbor-registry-secret
+  imageRegistry: harbor.adp.example.com/apic
   apicGatewayServiceV5CompatibilityMode: false
   gatewayEndpoint:
-    #ingressClassName: $INGRESS_CLASS
+    ingressClassName: traefik
     annotations:
       cert-manager.io/issuer: ingress-issuer
     hosts:
-    - name: rgw.$STACK_HOST
+    - name: rgw.apic.adp.example.com
       secretName: gwv6-endpoint
   gatewayManagerEndpoint:
-    #ingressClassName: $INGRESS_CLASS
+    ingressClassName: traefik
     annotations:
       cert-manager.io/issuer: ingress-issuer
     hosts:
-    - name: rgwd.$STACK_HOST
+    - name: rgwd.apic.adp.example.com
       secretName: gwv6-manager-endpoint
   apicGatewayServiceTLS:
     secretName: gateway-service
   apicGatewayPeeringTLS:
     secretName: gateway-peering
   mgmtPlatformEndpointCASecret:
-    secretName: $PLATFORM_CA_SECRET # Usually ingress-ca
-  #mgmtPlatformEndpointSvcCASecret:
-  #  secretName:  # Usually management-ca
+    secretName: ingress-ca
   datapowerLogLevel: 3
   license:
-    accept: false
+    accept: true
     use: production
-    license: ''
+    license: L-HTFS-UAXYM3
   tokenManagementService:
     enabled: true
     storage:
-      storageClassName: $STORAGE_CLASS
+      storageClassName: nfs-ssd
       volumeSize: 30Gi
   adminUser:
-    secretName: $ADMIN_USER_SECRET
+    secretName: datapower-admin-credentials
   mtlsValidateClient: false
-  # syslogConfig:
-  #   enabled: false # if true, provide below details
-  #   remoteHost: $DATAPOWER_SYSLOG_TCP_REMOTE_HOST # must be a string
-  #   remotePort: $DATAPOWER_SYSLOG_TCP_REMOTE_PORT # must be an int
-  #   secretName: $DATAPOWER_SYSLOG_TCP_TLS_SECRET # must be a string
