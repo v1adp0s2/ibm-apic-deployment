@@ -120,14 +120,26 @@ Then transfer to the server:
     docker run --rm apiconnect-image-tool-10.0.8.6 upload \
       harbor.talos.zebra-cloud.net/apic \
       --username <HARBOR_USER> \
-      --password <HARBOR_PASSWORD>
+      --password <HARBOR_PASSWORD> \
+      --tls-verify=false
 
 Note: Create a project called `apic` in Harbor first via the Harbor UI at
 https://harbor.talos.zebra-cloud.net before running the upload.
 
-If Harbor uses self-signed certs, add `--tls-verify=false`.
+The `--tls-verify=false` flag is needed for self-signed or internal CA certificates.
 
-### 8d. Create Harbor pull secret
+**Alternative: Upload to Docker Hub**
+
+    docker run --rm apiconnect-image-tool-10.0.8.6 upload \
+      docker.io/v1ad1m1r \
+      --username v1ad1m1r \
+      --password <DOCKERHUB_TOKEN>
+
+Note: Docker Hub does not require the `--tls-verify=false` flag. Use a Docker Hub access token instead of your password for better security. Create an access token at https://hub.docker.com/settings/security
+
+### 8d. Create registry pull secret
+
+**For Harbor:**
 
     kubectl-1.30 create secret docker-registry harbor-registry-secret \
       --docker-server=harbor.talos.zebra-cloud.net \
@@ -137,12 +149,29 @@ If Harbor uses self-signed certs, add `--tls-verify=false`.
       --namespace apic \
       --dry-run=client -o yaml | kubectl-1.30 apply -f -
 
+**For Docker Hub:**
+
+    kubectl-1.30 create secret docker-registry dockerhub-registry-secret \
+      --docker-server=docker.io \
+      --docker-username=v1ad1m1r \
+      --docker-password=<DOCKERHUB_TOKEN> \
+      --docker-email=$IBM_USER \
+      --namespace apic \
+      --dry-run=client -o yaml | kubectl-1.30 apply -f -
+
 ## Step 9: Update Operator IMAGE_REGISTRY (TODO)
 
 Edit `apiconnect-operator/ibm-apiconnect.yaml` line ~898:
 
+**For Harbor:**
+
     - name: IMAGE_REGISTRY
       value: harbor.talos.zebra-cloud.net/apic
+
+**For Docker Hub:**
+
+    - name: IMAGE_REGISTRY
+      value: docker.io/v1ad1m1r
 
 Then reapply:
 
@@ -156,6 +185,7 @@ Delete the stuck deployment first:
 
 Edit `apiconnect-operator/helper_files/management_cr.yaml`:
 
+**For Harbor:**
 ```yaml
 apiVersion: management.apiconnect.ibm.com/v1beta1
 kind: ManagementCluster
@@ -223,6 +253,23 @@ spec:
     license: L-HTFS-UAXYM3
 ```
 
+**For Docker Hub:**
+```yaml
+apiVersion: management.apiconnect.ibm.com/v1beta1
+kind: ManagementCluster
+metadata:
+  name: management
+spec:
+  version: 10.0.8.6
+  imagePullSecrets:
+  - dockerhub-registry-secret
+  imageRegistry: docker.io/v1ad1m1r
+  profile: n1xc4.m16
+  # ... rest of the configuration is identical to Harbor version
+```
+
+Note: The rest of the YAML configuration (endpoints, storage, etc.) remains the same.
+
 Apply:
 
     kubectl-1.30 apply -f apiconnect-operator/helper_files/management_cr.yaml -n apic
@@ -234,6 +281,8 @@ Wait for ready (can take 10-15 minutes):
 ## Step 11: Deploy Gateway Subsystem (TODO)
 
 Edit `apiconnect-operator/helper_files/apigateway_cr.yaml` with these values:
+
+**For Harbor:**
 
 | Placeholder | Value |
 |-------------|-------|
@@ -249,6 +298,15 @@ Edit `apiconnect-operator/helper_files/apigateway_cr.yaml` with these values:
 | `license.accept` | `true` |
 | `license.license` | `L-HTFS-UAXYM3` |
 
+**For Docker Hub:**
+
+| Placeholder | Value |
+|-------------|-------|
+| `$SECRET_NAME` | `dockerhub-registry-secret` |
+| `$DOCKER_REGISTRY` | `docker.io/v1ad1m1r` |
+
+(All other values remain the same as Harbor)
+
 Endpoints created:
 - Gateway: `rgw.apic.talos.zebra-cloud.net`
 - Gateway Manager: `rgwd.apic.talos.zebra-cloud.net`
@@ -260,6 +318,8 @@ Apply:
 ## Step 12: Deploy Portal Subsystem (TODO)
 
 Edit `apiconnect-operator/helper_files/portal_cr.yaml` with these values:
+
+**For Harbor:**
 
 | Placeholder | Value |
 |-------------|-------|
@@ -275,6 +335,15 @@ Edit `apiconnect-operator/helper_files/portal_cr.yaml` with these values:
 | `license.accept` | `true` |
 | `license.license` | `L-HTFS-UAXYM3` |
 
+**For Docker Hub:**
+
+| Placeholder | Value |
+|-------------|-------|
+| `$SECRET_NAME` | `dockerhub-registry-secret` |
+| `$DOCKER_REGISTRY` | `docker.io/v1ad1m1r` |
+
+(All other values remain the same as Harbor)
+
 Endpoints created:
 - Portal Admin: `api.portal.apic.talos.zebra-cloud.net`
 - Portal UI: `portal.apic.talos.zebra-cloud.net`
@@ -286,6 +355,8 @@ Apply:
 ## Step 13: Deploy Analytics Subsystem (TODO)
 
 Edit `apiconnect-operator/helper_files/analytics_cr.yaml` with these values:
+
+**For Harbor:**
 
 | Placeholder | Value |
 |-------------|-------|
@@ -301,6 +372,15 @@ Edit `apiconnect-operator/helper_files/analytics_cr.yaml` with these values:
 | `$DATA_VOLUME_SIZE` | `50Gi` |
 | `license.accept` | `true` |
 | `license.license` | `L-HTFS-UAXYM3` |
+
+**For Docker Hub:**
+
+| Placeholder | Value |
+|-------------|-------|
+| `$SECRET_NAME` | `dockerhub-registry-secret` |
+| `$DOCKER_REGISTRY` | `docker.io/v1ad1m1r` |
+
+(All other values remain the same as Harbor)
 
 Endpoints created:
 - Analytics Ingestion: `ai.apic.talos.zebra-cloud.net`
