@@ -1,0 +1,56 @@
+apiVersion: portal.apiconnect.ibm.com/v1beta1
+kind: PortalCluster
+metadata:
+  name: portal
+spec:
+  version: 12.1.0.1
+  profile: n1xc4.m16
+  imagePullSecrets:
+    - harbor-registry-secret
+  imageRegistry: harbor.adp.example.com/apic
+  mgmtPlatformEndpointCASecret:
+    secretName: ingress-ca
+  mgmtConsumerEndpointCASecret:
+    secretName: ingress-ca
+  portalAdminEndpoint:
+    ingressClassName: traefik
+    annotations:
+      cert-manager.io/issuer: ingress-issuer
+    hosts:
+    - name: api.portal.apic.adp.example.com
+      secretName: portal-admin
+  portalUIEndpoint:
+    ingressClassName: traefik
+    annotations:
+      cert-manager.io/issuer: ingress-issuer
+    hosts:
+    - name: portal.apic.adp.example.com
+      secretName: portal-web
+  databaseVolumeClaimTemplate:
+    storageClassName: nfs-ssd
+    volumeSize: 64Gi
+  databaseLogsVolumeClaimTemplate:
+    storageClassName: nfs-ssd
+    volumeSize: 12Gi
+  webVolumeClaimTemplate:
+    storageClassName: nfs-ssd
+    volumeSize: 64Gi
+  backupVolumeClaimTemplate:
+    storageClassName: nfs-ssd
+    volumeSize: 15Gi
+  adminVolumeClaimTemplate:
+    storageClassName: nfs-ssd
+    volumeSize: 6Gi
+  certVolumeClaimTemplate:
+    storageClassName: nfs-ssd
+    volumeSize: 4Gi
+  adminClientSubjectDN: CN=portal-admin-client,O=cert-manager
+  microServiceSecurity: certManager
+  certManagerIssuer:
+    name: selfsigning-issuer
+    kind: Issuer
+  license:
+    accept: true
+    use: production
+    license: L-HTFS-UAXYM3
+  mtlsValidateClient: true

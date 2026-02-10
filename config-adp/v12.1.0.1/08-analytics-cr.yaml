@@ -1,0 +1,39 @@
+apiVersion: analytics.apiconnect.ibm.com/v1beta1
+kind: AnalyticsCluster
+metadata:
+  name: analytics
+spec:
+  version: 12.1.0.1
+  license:
+    accept: true
+    use: production
+    license: L-HTFS-UAXYM3
+  profile: n1xc4.m16
+  imagePullSecrets:
+  - harbor-registry-secret
+  imageRegistry: harbor.adp.example.com/apic
+  mgmtPlatformEndpointCASecret:
+    secretName: ingress-ca
+  microServiceSecurity: certManager
+  certManagerIssuer:
+    name: selfsigning-issuer
+    kind: Issuer
+  ingestion:
+    endpoint:
+      ingressClassName: traefik
+      annotations:
+        cert-manager.io/issuer: ingress-issuer
+      hosts:
+      - name: ai.apic.adp.example.com
+        secretName: analytics-ai-endpoint
+    clientSubjectDN: CN=analytics-ingestion-client,O=cert-manager
+  mtlsValidateClient: true
+  analyticsMode: true
+  federatedAPIManagementMode: false
+  devPortalMode: false
+  storage:
+    type: shared
+    shared:
+      volumeClaimTemplate:
+        storageClassName: nfs-ssd
+        volumeSize: 50Gi
