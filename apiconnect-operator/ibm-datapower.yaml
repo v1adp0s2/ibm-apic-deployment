@@ -9,7 +9,7 @@ metadata:
     app.kubernetes.io/name: datapower-operator
     app.kubernetes.io/managed-by: datapower-operator
 imagePullSecrets:
-- name: datapower-admin-credentials
+- name: harbor-registry-secret
 ---
 # Source: datapower-operator/templates/cluster_role.yaml
 apiVersion: rbac.authorization.k8s.io/v1
@@ -419,7 +419,7 @@ spec:
       containers:
         - name: datapower-operator
           # Replace this with the built image name
-          image: icr.io/cpopen/datapower-operator:1.11.9
+          image: harbor.talos.zebra-cloud.net/apic/datapower-operator:1.11.9
           command:
           - /datapower-operator
           args:
@@ -449,11 +449,11 @@ spec:
             - name: NAMESPACED_NAME
               value: datapower-operator-default
             - name: IBM_ENTITLED_REGISTRY
-              value: "cp.icr.io/cp/datapower"
+              value: "harbor.talos.zebra-cloud.net/apic/datapower"
             - name: IBM_FREE_REGISTRY_DATAPOWER
-              value: "icr.io/cpopen/datapower"
+              value: "harbor.talos.zebra-cloud.net/apic/datapower"
             - name: IBM_FREE_REGISTRY_CPOPEN
-              value: "icr.io/cpopen"
+              value: "harbor.talos.zebra-cloud.net/apic"
           resources:
             requests:
               cpu: "500m"
