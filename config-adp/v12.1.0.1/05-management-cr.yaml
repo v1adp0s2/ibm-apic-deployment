@@ -1,0 +1,76 @@
+apiVersion: management.apiconnect.ibm.com/v1beta1
+kind: ManagementCluster
+metadata:
+  name: management
+spec:
+  version: 12.1.0.1
+  imagePullSecrets:
+  - harbor-registry-secret
+  imageRegistry: harbor.adp.example.com/apic
+  profile: n1xc4.m16
+  portal:
+    admin:
+      secretName: portal-admin-client
+  analytics:
+    ingestion:
+      secretName: analytics-ingestion-client
+  gateway:
+    client:
+      secretName: gateway-client-client
+  devPortal:
+    admin:
+      secretName: devportal-admin-client
+  wmAPIGateway:
+    mgmt:
+      secretName: wmapigateway-mgmt-client
+  nanoGateway:
+    mgmt:
+      secretName: nano-gateway-mgmt-client
+  federatedAPIManagement:
+    admin:
+      secretName: federatedapimanagement-admin-client
+  cloudManagerEndpoint:
+    ingressClassName: traefik
+    annotations:
+      cert-manager.io/issuer: ingress-issuer
+    hosts:
+    - name: admin.apic.adp.example.com
+      secretName: cm-endpoint
+  apiManagerEndpoint:
+    ingressClassName: traefik
+    annotations:
+      cert-manager.io/issuer: ingress-issuer
+    hosts:
+    - name: manager.apic.adp.example.com
+      secretName: apim-endpoint
+  consumerCatalogEndpoint:
+    ingressClassName: traefik
+    annotations:
+      cert-manager.io/issuer: ingress-issuer
+    hosts:
+    - name: consumer-catalog.apic.adp.example.com
+      secretName: consumer-catalog-endpoint
+  platformAPIEndpoint:
+    ingressClassName: traefik
+    annotations:
+      cert-manager.io/issuer: ingress-issuer
+    hosts:
+    - name: api.apic.adp.example.com
+      secretName: api-endpoint
+  consumerAPIEndpoint:
+    ingressClassName: traefik
+    annotations:
+      cert-manager.io/issuer: ingress-issuer
+    hosts:
+    - name: consumer.apic.adp.example.com
+      secretName: consumer-endpoint
+  databaseVolumeClaimTemplate:
+    storageClassName: nfs-ssd
+  microServiceSecurity: certManager
+  certManagerIssuer:
+    name: selfsigning-issuer
+    kind: Issuer
+  license:
+    accept: true
+    use: production
+    license: L-HTFS-UAXYM3

@@ -1,0 +1,44 @@
+apiVersion: gateway.apiconnect.ibm.com/v1beta1
+kind: GatewayCluster
+metadata:
+  name: gwv6
+spec:
+  version: 12.1.0.1
+  profile: n1xc4.m16
+  imagePullSecrets:
+  - harbor-registry-secret
+  imageRegistry: harbor.adp.example.com/apic
+  apicGatewayServiceV5CompatibilityMode: false
+  gatewayEndpoint:
+    ingressClassName: traefik
+    annotations:
+      cert-manager.io/issuer: ingress-issuer
+    hosts:
+    - name: rgw.apic.adp.example.com
+      secretName: gwv6-endpoint
+  gatewayManagerEndpoint:
+    ingressClassName: traefik
+    annotations:
+      cert-manager.io/issuer: ingress-issuer
+    hosts:
+    - name: rgwd.apic.adp.example.com
+      secretName: gwv6-manager-endpoint
+  apicGatewayServiceTLS:
+    secretName: gateway-service
+  apicGatewayPeeringTLS:
+    secretName: gateway-peering
+  mgmtPlatformEndpointCASecret:
+    secretName: ingress-ca
+  datapowerLogLevel: 3
+  license:
+    accept: true
+    use: production
+    license: L-HTFS-UAXYM3
+  tokenManagementService:
+    enabled: true
+    storage:
+      storageClassName: nfs-ssd
+      volumeSize: 30Gi
+  adminUser:
+    secretName: datapower-admin-credentials
+  mtlsValidateClient: false

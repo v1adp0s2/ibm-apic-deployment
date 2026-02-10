@@ -2,5 +2,6 @@
 .env
 
 # Operator release archives
-*.zip
+#*.zip
 *.tar.gz
+talos

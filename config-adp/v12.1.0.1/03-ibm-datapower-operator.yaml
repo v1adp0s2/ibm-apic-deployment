@@ -1,0 +1,436 @@
+---
+# Source: datapower-operator/templates/service_account.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: datapower-operator
+  labels:
+    app.kubernetes.io/instance: datapower-operator
+    app.kubernetes.io/name: datapower-operator
+    app.kubernetes.io/managed-by: datapower-operator
+imagePullSecrets:
+- name: datapower-docker-local-cred
+---
+# Source: datapower-operator/templates/cluster_role.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  creationTimestamp: null
+  name: datapower-operator-default
+  labels:
+    app.kubernetes.io/instance: datapower-operator-default
+    app.kubernetes.io/name: datapower-operator-default
+    app.kubernetes.io/managed-by: datapower-operator
+rules:
+- apiGroups:
+  - admissionregistration.k8s.io
+  resources:
+  - mutatingwebhookconfigurations
+  - validatingwebhookconfigurations
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - apiextensions.k8s.io
+  resources:
+  - customresourcedefinitions
+  verbs:
+  - get
+  - list
+- apiGroups:
+  - config.openshift.io
+  resources:
+  - clusterversions
+  verbs:
+  - get
+- apiGroups:
+  - operators.coreos.com
+  resources:
+  - clusterserviceversions
+  verbs:
+  - list
+  - watch
+- apiGroups:
+  - rbac.authorization.k8s.io
+  resources:
+  - clusterrolebindings
+  - clusterroles
+  verbs:
+  - get
+  - list
+- apiGroups:
+  - security.openshift.io
+  resourceNames:
+  - datapower-root
+  resources:
+  - securitycontextconstraints
+  verbs:
+  - use
+---
+# Source: datapower-operator/templates/cluster_role_binding.yaml
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: datapower-operator-default
+  labels:
+    app.kubernetes.io/instance: datapower-operator-default
+    app.kubernetes.io/name: datapower-operator-default
+    app.kubernetes.io/managed-by: datapower-operator
+subjects:
+- kind: ServiceAccount
+  name: datapower-operator
+  namespace: apic
+roleRef:
+  kind: ClusterRole
+  name: datapower-operator-default
+  apiGroup: rbac.authorization.k8s.io
+---
+# Source: datapower-operator/templates/role_OwnNamespace.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  creationTimestamp: null
+  name: datapower-operator
+  labels:
+    app.kubernetes.io/instance: datapower-operator
+    app.kubernetes.io/name: datapower-operator
+    app.kubernetes.io/managed-by: datapower-operator
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  - endpoints
+  - events
+  - persistentvolumeclaims
+  - pods
+  - pods/exec
+  - secrets
+  - serviceaccounts
+  - services
+  - services/finalizers
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - namespaces
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - pods/log
+  verbs:
+  - get
+  - list
+- apiGroups:
+  - apps
+  resources:
+  - daemonsets
+  - deployments
+  - replicasets
+  - statefulsets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - apps
+  resourceNames:
+  - datapower-operator
+  resources:
+  - deployments/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - autoscaling
+  - autoscaling.k8s.io
+  resources:
+  - horizontalpodautoscalers
+  - verticalpodautoscalers
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - batch
+  resources:
+  - jobs
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - cert-manager.io
+  resources:
+  - certificates
+  - issuers
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - cp4i.ibm.com
+  resources:
+  - cp4iservicesbindings
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - datapower.ibm.com
+  resources:
+  - datapowermonitors
+  - datapowermustgathermanagers
+  - datapowermustgathers
+  - datapowerrollouts
+  - datapowerservicebindings
+  - datapowerservices
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - datapower.ibm.com
+  resources:
+  - datapowermonitors/status
+  - datapowermustgathermanagers/status
+  - datapowermustgathers/status
+  - datapowerrollouts/status
+  - datapowerservicebindings/status
+  - datapowerservices/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - datapower.ibm.com
+  resources:
+  - datapowermustgathermanagers/finalizers
+  - datapowermustgathers/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - monitoring.coreos.com
+  resources:
+  - servicemonitors
+  verbs:
+  - create
+  - get
+- apiGroups:
+  - monitoringcontroller.cloud.ibm.com
+  resources:
+  - monitoringdashboards
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+- apiGroups:
+  - networking.k8s.io
+  resources:
+  - networkpolicies
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - operator.ibm.com
+  resources:
+  - operandrequests
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - rbac.authorization.k8s.io
+  resources:
+  - rolebindings
+  - roles
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+---
+# Source: datapower-operator/templates/role_binding_OwnNamespace.yaml
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  creationTimestamp: null
+  name: datapower-operator
+  labels:
+    app.kubernetes.io/instance: datapower-operator
+    app.kubernetes.io/name: datapower-operator
+    app.kubernetes.io/managed-by: datapower-operator
+subjects:
+- kind: ServiceAccount
+  name: datapower-operator
+  namespace: apic
+roleRef:
+  kind: Role
+  name: datapower-operator
+  apiGroup: rbac.authorization.k8s.io
+---
+# Source: datapower-operator/templates/operator.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: datapower-operator
+  labels:
+    app.kubernetes.io/instance: datapower-operator
+    app.kubernetes.io/name: datapower-operator
+    app.kubernetes.io/managed-by: datapower-operator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: datapower-operator
+      app.kubernetes.io/instance: datapower-operator
+      app.kubernetes.io/name: datapower-operator
+      app.kubernetes.io/managed-by: datapower-operator
+  template:
+    metadata:
+      labels:
+        name: datapower-operator
+        app.kubernetes.io/instance: datapower-operator
+        app.kubernetes.io/name: datapower-operator
+        app.kubernetes.io/managed-by: datapower-operator
+      annotations:
+        productID: "64a541a8e6d44869ba790cbafb937f7a"
+        productName: "IBM DataPower Operator"
+        productMetric: "FREE"
+        productChargedContainers: ""
+        productVersion: 1.17.0
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: "kubernetes.io/arch"
+                operator: In
+                values: ["amd64"]
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: topology.kubernetes.io/zone
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/instance: datapower-operator
+            app.kubernetes.io/name: datapower-operator
+            app.kubernetes.io/managed-by: datapower-operator
+      hostNetwork: false
+      hostPID: false
+      hostIPC: false
+      serviceAccountName: datapower-operator
+      containers:
+        - name: datapower-operator
+          # Replace this with the built image name
+          image: icr.io/cpopen/datapower-operator:1.17.0
+          command:
+          - /datapower-operator
+          args:
+          - "--leader-elect"
+          - "--zap-encoder=json"
+          - "--zap-log-level=info"
+          - "--zap-time-encoding=rfc3339nano"
+          imagePullPolicy: Always
+          volumeMounts:
+          - mountPath: /opt/ibm/datapower/operator
+            name: operator-volume
+          env:
+            - name: WATCH_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: OPERATOR_NAME
+              value: "datapower-operator"
+            - name: NAMESPACED_NAME
+              value: datapower-operator-default
+            - name: IBM_ENTITLED_REGISTRY
+              value: "cp.icr.io/cp/datapower"
+            - name: IBM_FREE_REGISTRY_DATAPOWER
+              value: "icr.io/cpopen/datapower"
+            - name: IBM_FREE_REGISTRY_CPOPEN
+              value: "icr.io/cpopen"
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: 2
+              memory: "2Gi"
+          securityContext:
+            capabilities:
+              drop:
+              - ALL
+            privileged: false
+            readOnlyRootFilesystem: false
+            allowPrivilegeEscalation: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+      - emptyDir: {}
+        name: operator-volume

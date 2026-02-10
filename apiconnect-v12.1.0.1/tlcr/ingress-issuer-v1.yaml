@@ -1,0 +1,199 @@
+
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: devportal-admin-client
+  labels: {
+    app.kubernetes.io/instance: "${APIC_CLUSTER_NAME}-mgmt",
+    app.kubernetes.io/managed-by: "ibm-apiconnect",
+    app.kubernetes.io/name: "devportal-admin-client"
+  }
+spec:
+  subject:
+    organizations:
+      - cert-manager
+  commonName: devportal-admin-client
+  secretName: devportal-admin-client
+  issuerRef:
+    name: ${APIC_CLUSTER_NAME}-ingress-issuer
+  usages:
+    - "client auth"
+    - "signing"
+    - "key encipherment"
+  duration: 17520h # 2 years
+  renewBefore: 720h # 30 days
+  privateKey:
+    rotationPolicy: Always
+  secretTemplate:
+    labels:
+      app.kubernetes.io/instance: "${APIC_CLUSTER_NAME}-mgmt"
+      app.kubernetes.io/managed-by: "ibm-apiconnect"
+      app.kubernetes.io/name: "devportal-admin-client"
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: devportal-wmapigateway-client
+  labels: {
+    app.kubernetes.io/managed-by: "ibm-apiconnect",
+    app.kubernetes.io/name: "devportal-wmapigateway-client"
+  }
+spec:
+  subject:
+    organizations:
+      - cert-manager
+  commonName: devportal-wmapigateway-client
+  secretName: devportal-wmapigateway-client
+  issuerRef:
+    name: ${APIC_CLUSTER_NAME}-ingress-issuer
+  usages:
+    - "client auth"
+    - "signing"
+    - "key encipherment"
+  duration: 17520h # 2 years
+  renewBefore: 720h # 30 days
+  privateKey:
+    rotationPolicy: Always
+  secretTemplate:
+    labels:
+      app.kubernetes.io/managed-by: "ibm-apiconnect"
+      app.kubernetes.io/name: "devportal-wmapigateway-client"
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: wmapigateway-mgmt-client
+  labels: {
+    app.kubernetes.io/instance: "${APIC_CLUSTER_NAME}-mgmt",
+    app.kubernetes.io/managed-by: "ibm-apiconnect",
+    app.kubernetes.io/name: "wmapigateway-mgmt-client"
+  }
+spec:
+  subject:
+    organizations:
+      - cert-manager
+  commonName: wmapigateway-mgmt-client
+  secretName: wmapigateway-mgmt-client
+  issuerRef:
+    name: ${APIC_CLUSTER_NAME}-ingress-issuer
+  usages:
+    - "client auth"
+    - "signing"
+    - "key encipherment"
+  duration: 17520h # 2 years
+  renewBefore: 720h # 30 days
+  privateKey:
+    rotationPolicy: Always
+  secretTemplate:
+    labels:
+      app.kubernetes.io/instance: "${APIC_CLUSTER_NAME}-mgmt"
+      app.kubernetes.io/managed-by: "ibm-apiconnect"
+      app.kubernetes.io/name: "wmapigateway-mgmt-client"
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: wmapigateway-devportal-client
+  labels: {
+    app.kubernetes.io/managed-by: "ibm-apiconnect",
+    app.kubernetes.io/name: "wmapigateway-devportal-client"
+  }
+spec:
+  subject:
+    organizations:
+      - cert-manager
+  commonName: wmapigateway-devportal-client
+  secretName: wmapigateway-devportal-client
+  issuerRef:
+    name: ${APIC_CLUSTER_NAME}-ingress-issuer
+  usages:
+    - "client auth"
+    - "signing"
+    - "key encipherment"
+  duration: 17520h # 2 years
+  renewBefore: 720h # 30 days
+  privateKey:
+    rotationPolicy: Always
+  secretTemplate:
+    labels:
+      app.kubernetes.io/managed-by: "ibm-apiconnect"
+      app.kubernetes.io/name: "wmapigateway-devportal-client"
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: nano-gateway-mgmt-client
+  labels: {
+    app.kubernetes.io/instance: "${APIC_CLUSTER_NAME}-mgmt",
+    app.kubernetes.io/managed-by: "ibm-apiconnect",
+    app.kubernetes.io/name: "nano-gateway-mgmt-client"
+  }
+spec:
+  subject:
+    organizations:
+      - cert-manager
+  commonName: nano-gateway-mgmt-client
+  secretName: nano-gateway-mgmt-client
+  issuerRef:
+    name: ${APIC_CLUSTER_NAME}-ingress-issuer
+  usages:
+    - "client auth"
+    - "signing"
+    - "key encipherment"
+  duration: 17520h # 2 years
+  renewBefore: 720h # 30 days
+  privateKey:
+    rotationPolicy: Always
+  secretTemplate:
+    labels:
+      app.kubernetes.io/instance: "${APIC_CLUSTER_NAME}-mgmt"
+      app.kubernetes.io/managed-by: "ibm-apiconnect"
+      app.kubernetes.io/name: "nano-gateway-mgmt-client"
+
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: federatedapimanagement-admin-client
+  labels: {
+    app.kubernetes.io/instance: "${APIC_CLUSTER_NAME}-mgmt",
+    app.kubernetes.io/managed-by: "ibm-apiconnect",
+    app.kubernetes.io/name: "federatedapimanagement-admin-client"
+  }
+spec:
+  subject:
+    organizations:
+      - cert-manager
+  commonName: federatedapimanagement-admin-client
+  secretName: federatedapimanagement-admin-client
+  issuerRef:
+    name: ${APIC_CLUSTER_NAME}-ingress-issuer
+  usages:
+    - "client auth"
+    - "signing"
+    - "key encipherment"
+  duration: 17520h # 2 years
+  renewBefore: 720h # 30 days
+  privateKey:
+    rotationPolicy: Always
+  secretTemplate:
+    labels:
+      app.kubernetes.io/instance: "${APIC_CLUSTER_NAME}-mgmt"
+      app.kubernetes.io/managed-by: "ibm-apiconnect"
+      app.kubernetes.io/name: "federatedapimanagement-admin-client"
