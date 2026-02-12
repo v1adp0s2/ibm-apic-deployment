@@ -4,33 +4,34 @@
 
 | Item | Value |
 |------|-------|
-| Cluster | Kubernetes with Traefik ingress |
+| Cluster | Talos Kubernetes with Traefik ingress |
 | Namespace | `apic` |
 | Domain | `apic.adp.example.com` |
-| Storage Class | `nfs-ssd` |
-| Private Registry | `harbor.adp.example.com` |
+| Storage Class | `nfs-ssd` (NFS with no_root_squash enabled) |
+| Private Registry | `harbor.adp.example.com/apic` |
 | Operator Version | 12.1.0.1 |
 | Product Version | 12.1.0.1 |
 | Profile | `n1xc4.m16` (single-node, smallest) |
-| License | `L-HTFS-UAXYM3` |
+| License | `L-SBZZ-CNR329` (webMethods Hybrid Integration) |
+| License Use | `nonproduction` |
 
 ## Current Status
 
 | Step | Status |
 |------|--------|
-| 1. Namespace | DONE |
-| 2. cert-manager | DONE |
-| 3. Registry secrets (cp.icr.io) | DONE (will need Harbor secret) |
-| 4. CRDs | DONE |
-| 5. API Connect operator | DONE (Running) |
-| 6. DataPower operator | DONE (Running) |
-| 7. Ingress issuer | DONE |
-| 8. Mirror images to Harbor | **TODO** |
-| 9. Update secrets + CRs for Harbor | **TODO** |
-| 10. Management subsystem | **TODO** (deployed but stuck - edb-operator ImagePullBackOff) |
-| 11. Gateway subsystem | **TODO** |
-| 12. Portal subsystem | **TODO** |
-| 13. Analytics subsystem | **TODO** |
+| 1. Namespace | ✓ DONE |
+| 2. cert-manager | ✓ DONE |
+| 3. Registry secrets | ✓ DONE (Harbor + IBM entitlement) |
+| 4. CRDs | ✓ DONE |
+| 5. Configure NFS storage | ✓ DONE (no_root_squash + default SC) |
+| 6. Install operators (Harbor) | ✓ DONE (ibm-apiconnect, datapower, edb) |
+| 7. Ingress issuer | ✓ DONE |
+| 8. Management subsystem | **IN PROGRESS** (10/23 components ready) |
+| 9. Gateway subsystem | **TODO** |
+| 10. Portal subsystem | **TODO** |
+| 11. Analytics subsystem | **TODO** |
+
+**Note:** Images must be mirrored to Harbor before deployment (see IMAGE-MIRRORING-GUIDE.md)
 
 ---
 
@@ -47,192 +48,119 @@
 
     source .env
 
-    # IBM Entitled Registry secret (for operators)
-    kubectl-1.30 create secret docker-registry apic-registry-secret \
-      --docker-server=cp.icr.io \
-      --docker-username=cp \
-      --docker-password=$IBM_ENTITLEMENT_KEY \
-      --docker-email=$IBM_USER \
-      --namespace apic \
-      --dry-run=client -o yaml | kubectl-1.30 apply -f -
+    # Harbor registry secret (primary registry for all images)
+    kubectl create secret docker-registry harbor-registry-secret \
+      --docker-server=$REGISTRY_SERVER \
+      --docker-username=$REGISTRY_USERNAME \
+      --docker-password=$REGISTRY_USERPWD \
+      --namespace apic
 
-    # DataPower registry secret
-    kubectl-1.30 create secret docker-registry datapower-docker-local-cred \
+    # IBM Entitled Registry secret (for initial operator images if needed)
+    kubectl create secret docker-registry apic-registry-secret \
       --docker-server=cp.icr.io \
       --docker-username=cp \
       --docker-password=$IBM_ENTITLEMENT_KEY \
-      --docker-email=$IBM_USER \
-      --namespace apic \
-      --dry-run=client -o yaml | kubectl-1.30 apply -f -
+      --namespace apic
 
     # DataPower admin credentials
-    kubectl-1.30 create secret generic datapower-admin-credentials \
+    kubectl create secret generic datapower-admin-credentials \
       --from-literal=password=$APIC_ADMIN_PWD \
-      --namespace apic \
-      --dry-run=client -o yaml | kubectl-1.30 apply -f -
+      --namespace apic
+
+**Note:** The primary registry is Harbor (`harbor.adp.example.com/apic`). All API Connect images must be mirrored to Harbor before deployment.
 
 ## Step 4: Install CRDs (DONE)
 
-    kubectl-1.30 apply --server-side --force-conflicts \
-      -f apiconnect-operator/ibm-apiconnect-crds.yaml
+    kubectl apply --server-side --force-conflicts \
+      -f 01-ibm-apiconnect-crds.yaml
 
-## Step 5: Install Operators (DONE)
+## Step 5: Configure NFS Storage (CRITICAL)
 
-    kubectl-1.30 apply -f apiconnect-operator/ibm-apiconnect.yaml --namespace apic
-    kubectl-1.30 apply -f apiconnect-operator/ibm-datapower.yaml --namespace apic
+### 5a. Configure NFS Server with no_root_squash
 
-**Important:** Before applying, ensure `namespace: default` is replaced with `namespace: apic`
-in `ibm-datapower.yaml` (2 occurrences in RoleBinding/ClusterRoleBinding subjects).
+PostgreSQL requires the ability to set file ownership to UID 26 (postgres user). NFS must be configured with `no_root_squash` to allow this.
 
-## Step 6: Install Ingress Issuer (DONE)
+**For QNAP NFS:**
+1. Open QNAP Control Panel → Privileges → Shared Folders
+2. Select the NFS export used by Kubernetes
+3. Click "Edit Shared Folder Permissions" → "NFS Host Access"
+4. Add or edit the rule for your Kubernetes subnet
+5. Set permissions: **Read/Write**
+6. Set Squash option: **No squash** (or "no_root_squash")
+7. Apply changes
 
-    kubectl-1.30 apply -f apiconnect-operator/helper_files/ingress-issuer-v1.yaml -n apic
+**For Linux NFS server (e.g., /etc/exports):**
+
+    /nfs/kubernetes *(rw,sync,no_subtree_check,no_root_squash,no_all_squash)
+
+Then reload:
+
+    exportfs -ra
+
+### 5b. Set nfs-ssd as Default Storage Class
+
+API Connect creates multiple PVCs. To ensure all use NFS storage:
+
+    # Remove default from openebs-hostpath (if present)
+    kubectl patch storageclass openebs-hostpath \
+      -p '{"metadata":{"annotations":{"storageclass.kubernetes.io/is-default-class":"false"}}}'
+
+    # Make nfs-ssd the default
+    kubectl patch storageclass nfs-ssd \
+      -p '{"metadata":{"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
+
+    # Verify
+    kubectl get storageclass
+
+Expected output: `nfs-ssd (default)`
+
+## Step 6: Install Operators (DONE)
+
+**Important:** Operators must be configured to use Harbor registry before deployment.
+
+### 6a. Update API Connect Operator for Harbor
+
+Edit `02-ibm-apiconnect-operator.yaml`:
+- Line ~290: Change `IMAGE_REGISTRY` value to `harbor.adp.example.com/apic`
+- Line ~94: Change `imagePullSecrets` to `harbor-registry-secret`
+- Update all operator image references from placeholder to `harbor.adp.example.com/apic/...`
+
+Apply:
+
+    kubectl apply -f 02-ibm-apiconnect-operator.yaml -n apic
+
+### 6b. Update DataPower Operator for Harbor
+
+Edit `03-ibm-datapower-operator.yaml`:
+- Line ~381: Change operator image to `harbor.adp.example.com/apic/datapower-operator:1.17.0`
+- Line ~411-415: Update environment variables:
+  - `IBM_ENTITLED_REGISTRY=harbor.adp.example.com/apic`
+  - `IBM_FREE_REGISTRY_DATAPOWER=harbor.adp.example.com/apic`
+  - `IBM_FREE_REGISTRY_CPOPEN=harbor.adp.example.com/apic`
+- Line ~12: Change `imagePullSecrets` from `datapower-docker-local-cred` to `harbor-registry-secret`
+
+Apply:
+
+    kubectl apply -f 03-ibm-datapower-operator.yaml -n apic
+
+### 6c. Wait for operators to be ready
+
+    kubectl wait --for=condition=Available deployment/ibm-apiconnect -n apic --timeout=300s
+    kubectl wait --for=condition=Available deployment/datapower-operator -n apic --timeout=300s
+
+## Step 7: Install Ingress Issuer (DONE)
+
+    kubectl apply -f 04-ingress-issuer.yaml -n apic
+    kubectl wait --for=condition=Ready certificate/ingress-ca -n apic --timeout=60s
 
 ---
 
-## Step 7: Download apiconnect-image-tool (TODO)
+**Note:** Before proceeding, ensure all API Connect v12.1.0.1 images have been mirrored to Harbor. See the separate "IMAGE-MIRRORING-GUIDE.md" for instructions.
 
-Download from [IBM Fix Central](https://www.ibm.com/support/fixcentral/):
-- Product: IBM API Connect → 12.1.0.1
-- File: `apiconnect-image-tool-12.1.0.1.tar.gz`
+## Step 8: Deploy Management Subsystem (IN PROGRESS)
 
-On Windows (download to E:\apic):
+The Management CR is already configured in `05-management-cr.yaml`. Key configuration:
 
-    curl.exe -L -C - -o E:\apic\apiconnect-image-tool-12.1.0.1.tar.gz --retry 999 --retry-delay 5 --retry-all-errors --create-dirs <DOWNLOAD_URL>
-
-Then transfer to the server:
-
-    scp E:\apic\apiconnect-image-tool-12.1.0.1.tar.gz demo01:/home/administrator/git/demos/apic-deployment/
-
-### Using s3cmd for File Transfer (Optional)
-
-For large file transfers, `s3cmd` can be used with S3-compatible storage (DigitalOcean Spaces, AWS S3, MinIO, etc.) as an alternative to `scp`.
-
-**Install:**
-
-    sudo apt install s3cmd
-
-**Configure (DigitalOcean Spaces example):**
-
-    s3cmd --configure \
-      --host=ams3.digitaloceanspaces.com \
-      --host-bucket="%(bucket)s.ams3.digitaloceanspaces.com" \
-      --access_key=YOUR_ACCESS_KEY \
-      --secret_key=YOUR_SECRET_KEY
-
-This saves a config file at `~/.s3cfg`. To use a named config (e.g., for multiple providers):
-
-    s3cmd --configure -c ~/do-tor1.s3cfg
-
-**Upload:**
-
-    s3cmd -c ~/do-tor1.s3cfg put --progress \
-      apiconnect-image-tool-12.1.0.1.tar.gz \
-      s3://bucket-name/apic/apiconnect-image-tool-12.1.0.1.tar.gz
-
-**Download:**
-
-    s3cmd -c ~/do-tor1.s3cfg get --progress \
-      s3://bucket-name/apic/apiconnect-image-tool-12.1.0.1.tar.gz \
-      ./apiconnect-image-tool-12.1.0.1.tar.gz
-
-**Other useful commands:**
-
-    # List buckets
-    s3cmd -c ~/do-tor1.s3cfg ls
-
-    # List files in bucket
-    s3cmd -c ~/do-tor1.s3cfg ls s3://bucket-name/apic/
-
-    # Upload a directory recursively
-    s3cmd -c ~/do-tor1.s3cfg put -r --progress ./artifacts/ s3://bucket-name/apic/
-
-    # For large files, use multipart upload with larger chunks
-    s3cmd -c ~/do-tor1.s3cfg put --progress --multipart-chunk-size-mb=50 \
-      largefile.tar.gz s3://bucket-name/apic/
-
-## Step 8: Mirror Images to Harbor (TODO)
-
-### 8a. Load image tool into Docker
-
-    cd /home/administrator/git/demos/apic-deployment
-    docker load < apiconnect-image-tool-12.1.0.1.tar.gz
-
-### 8b. List all images (optional, for reference)
-
-    docker run --rm apiconnect-image-tool-12.1.0.1 version --images
-
-### 8c. Upload all images to Harbor
-
-    docker run --rm apiconnect-image-tool-12.1.0.1 upload \
-      harbor.adp.example.com/apic \
-      --username <HARBOR_USER> \
-      --password <HARBOR_PASSWORD> \
-      --tls-verify=false
-
-Note: Create a project called `apic` in Harbor first via the Harbor UI at
-https://harbor.adp.example.com before running the upload.
-
-The `--tls-verify=false` flag is needed for self-signed or internal CA certificates.
-
-**Alternative: Upload to Docker Hub**
-
-    docker run --rm apiconnect-image-tool-12.1.0.1 upload \
-      docker.io/v1ad1m1r \
-      --username v1ad1m1r \
-      --password <DOCKERHUB_TOKEN>
-
-Note: Docker Hub does not require the `--tls-verify=false` flag. Use a Docker Hub access token instead of your password for better security. Create an access token at https://hub.docker.com/settings/security
-
-### 8d. Create registry pull secret
-
-**For Harbor:**
-
-    kubectl-1.30 create secret docker-registry harbor-registry-secret \
-      --docker-server=harbor.adp.example.com \
-      --docker-username=<HARBOR_USER> \
-      --docker-password=<HARBOR_PASSWORD> \
-      --docker-email=$IBM_USER \
-      --namespace apic \
-      --dry-run=client -o yaml | kubectl-1.30 apply -f -
-
-**For Docker Hub:**
-
-    kubectl-1.30 create secret docker-registry dockerhub-registry-secret \
-      --docker-server=docker.io \
-      --docker-username=v1ad1m1r \
-      --docker-password=<DOCKERHUB_TOKEN> \
-      --docker-email=$IBM_USER \
-      --namespace apic \
-      --dry-run=client -o yaml | kubectl-1.30 apply -f -
-
-## Step 9: Update Operator IMAGE_REGISTRY (TODO)
-
-Edit `apiconnect-operator/ibm-apiconnect.yaml` line ~898:
-
-**For Harbor:**
-
-    - name: IMAGE_REGISTRY
-      value: harbor.adp.example.com/apic
-
-**For Docker Hub:**
-
-    - name: IMAGE_REGISTRY
-      value: docker.io/v1ad1m1r
-
-Then reapply:
-
-    kubectl-1.30 apply -f apiconnect-operator/ibm-apiconnect.yaml --namespace apic
-
-## Step 10: Deploy Management Subsystem (TODO - redo)
-
-Delete the stuck deployment first:
-
-    kubectl-1.30 delete managementcluster management -n apic
-
-Edit `apiconnect-operator/helper_files/management_cr.yaml`:
-
-**For Harbor:**
 ```yaml
 apiVersion: management.apiconnect.ibm.com/v1beta1
 kind: ManagementCluster
@@ -244,6 +172,8 @@ spec:
   - harbor-registry-secret
   imageRegistry: harbor.adp.example.com/apic
   profile: n1xc4.m16
+
+  # Subsystem client secrets
   portal:
     admin:
       secretName: portal-admin-client
@@ -253,6 +183,20 @@ spec:
   gateway:
     client:
       secretName: gateway-client-client
+  devPortal:
+    admin:
+      secretName: devportal-admin-client
+  wmAPIGateway:
+    mgmt:
+      secretName: wmapigateway-mgmt-client
+  nanoGateway:
+    mgmt:
+      secretName: nano-gateway-mgmt-client
+  federatedAPIManagement:
+    admin:
+      secretName: federatedapimanagement-admin-client
+
+  # Ingress endpoints
   cloudManagerEndpoint:
     ingressClassName: traefik
     annotations:
@@ -288,48 +232,45 @@ spec:
     hosts:
     - name: consumer.apic.adp.example.com
       secretName: consumer-endpoint
+
+  # Storage - only specify database data, others use default SC
   databaseVolumeClaimTemplate:
     storageClassName: nfs-ssd
+
+  # Security
   microServiceSecurity: certManager
   certManagerIssuer:
     name: selfsigning-issuer
     kind: Issuer
+
+  # License - CRITICAL: Use L-SBZZ-CNR329 for v12.1.0.1
   license:
     accept: true
-    use: production
-    license: L-HTFS-UAXYM3
+    use: nonproduction
+    license: L-SBZZ-CNR329
 ```
 
-**For Docker Hub:**
-```yaml
-apiVersion: management.apiconnect.ibm.com/v1beta1
-kind: ManagementCluster
-metadata:
-  name: management
-spec:
-  version: 12.1.0.1
-  imagePullSecrets:
-  - dockerhub-registry-secret
-  imageRegistry: docker.io/v1ad1m1r
-  profile: n1xc4.m16
-  # ... rest of the configuration is identical to Harbor version
-```
-
-Note: The rest of the YAML configuration (endpoints, storage, etc.) remains the same.
+**Important Notes:**
+- **License**: Use `L-SBZZ-CNR329` (IBM webMethods Hybrid Integration) with `use: nonproduction` for development/testing
+- **Storage**: Only `databaseVolumeClaimTemplate` is specified; WAL and S3 proxy volumes use the default storage class (nfs-ssd)
+- **NFS**: Ensure `no_root_squash` is configured on NFS server before deployment (see Step 5a)
 
 Apply:
 
-    kubectl-1.30 apply -f apiconnect-operator/helper_files/management_cr.yaml -n apic
+    kubectl apply -f 05-management-cr.yaml -n apic
 
-Wait for ready (can take 10-15 minutes):
+Wait for ready (10-20 minutes):
 
-    kubectl-1.30 get managementcluster management -n apic -w
+    kubectl get managementcluster management -n apic -w
 
-## Step 11: Deploy Gateway Subsystem (TODO)
+Monitor deployment:
+
+    kubectl get pods -n apic -w
+    kubectl get managementcluster management -n apic -o yaml | grep -A 10 status:
+
+## Step 9: Deploy Gateway Subsystem (TODO)
 
 Edit `apiconnect-operator/helper_files/apigateway_cr.yaml` with these values:
-
-**For Harbor:**
 
 | Placeholder | Value |
 |-------------|-------|
@@ -343,16 +284,8 @@ Edit `apiconnect-operator/helper_files/apigateway_cr.yaml` with these values:
 | `$ADMIN_USER_SECRET` | `datapower-admin-credentials` |
 | `$PLATFORM_CA_SECRET` | `ingress-ca` |
 | `license.accept` | `true` |
-| `license.license` | `L-HTFS-UAXYM3` |
-
-**For Docker Hub:**
-
-| Placeholder | Value |
-|-------------|-------|
-| `$SECRET_NAME` | `dockerhub-registry-secret` |
-| `$DOCKER_REGISTRY` | `docker.io/v1ad1m1r` |
-
-(All other values remain the same as Harbor)
+| `license.license` | `L-SBZZ-CNR329` |
+| `license.use` | `nonproduction` |
 
 Endpoints created:
 - Gateway: `rgw.apic.adp.example.com`
@@ -360,13 +293,11 @@ Endpoints created:
 
 Apply:
 
-    kubectl-1.30 apply -f apiconnect-operator/helper_files/apigateway_cr.yaml -n apic
+    kubectl apply -f apiconnect-operator/helper_files/apigateway_cr.yaml -n apic
 
-## Step 12: Deploy Portal Subsystem (TODO)
+## Step 10: Deploy Portal Subsystem (TODO)
 
 Edit `apiconnect-operator/helper_files/portal_cr.yaml` with these values:
-
-**For Harbor:**
 
 | Placeholder | Value |
 |-------------|-------|
@@ -380,16 +311,8 @@ Edit `apiconnect-operator/helper_files/portal_cr.yaml` with these values:
 | `$STACK_HOST` | `apic.adp.example.com` |
 | `$STORAGE_CLASS` | `nfs-ssd` |
 | `license.accept` | `true` |
-| `license.license` | `L-HTFS-UAXYM3` |
-
-**For Docker Hub:**
-
-| Placeholder | Value |
-|-------------|-------|
-| `$SECRET_NAME` | `dockerhub-registry-secret` |
-| `$DOCKER_REGISTRY` | `docker.io/v1ad1m1r` |
-
-(All other values remain the same as Harbor)
+| `license.license` | `L-SBZZ-CNR329` |
+| `license.use` | `nonproduction` |
 
 Endpoints created:
 - Portal Admin: `api.portal.apic.adp.example.com`
@@ -397,13 +320,11 @@ Endpoints created:
 
 Apply:
 
-    kubectl-1.30 apply -f apiconnect-operator/helper_files/portal_cr.yaml -n apic
+    kubectl apply -f apiconnect-operator/helper_files/portal_cr.yaml -n apic
 
-## Step 13: Deploy Analytics Subsystem (TODO)
+## Step 11: Deploy Analytics Subsystem (TODO)
 
 Edit `apiconnect-operator/helper_files/analytics_cr.yaml` with these values:
-
-**For Harbor:**
 
 | Placeholder | Value |
 |-------------|-------|
@@ -418,16 +339,8 @@ Edit `apiconnect-operator/helper_files/analytics_cr.yaml` with these values:
 | `$STORAGE_CLASS` | `nfs-ssd` |
 | `$DATA_VOLUME_SIZE` | `50Gi` |
 | `license.accept` | `true` |
-| `license.license` | `L-HTFS-UAXYM3` |
-
-**For Docker Hub:**
-
-| Placeholder | Value |
-|-------------|-------|
-| `$SECRET_NAME` | `dockerhub-registry-secret` |
-| `$DOCKER_REGISTRY` | `docker.io/v1ad1m1r` |
-
-(All other values remain the same as Harbor)
+| `license.license` | `L-SBZZ-CNR329` |
+| `license.use` | `nonproduction` |
 
 Endpoints created:
 - Analytics Ingestion: `ai.apic.adp.example.com`
@@ -479,10 +392,104 @@ Create a wildcard DNS record: `*.apic.adp.example.com` -> cluster ingress IP.
 - Verify images were uploaded to Harbor: check Harbor UI project `apic`
 - Verify `harbor-registry-secret` exists and has correct credentials
 - Verify `imageRegistry` in CRs points to `harbor.adp.example.com/apic`
+- For operators: verify operator YAML has been updated with Harbor registry
 
-### Management stuck in Pending
-- Check edb-operator pod is running (requires images in Harbor)
-- Check operator logs: `kubectl-1.30 logs deployment/ibm-apiconnect -n apic --tail=100`
+### PostgreSQL Init Fails: "data directory has wrong ownership"
 
-### CRD errors
-- Re-apply with: `kubectl-1.30 apply --server-side --force-conflicts -f apiconnect-operator/ibm-apiconnect-crds.yaml`
+**Error:**
+```
+FATAL: data directory "/var/lib/postgresql/data/pgdata" has wrong ownership
+HINT: The server must be started by the user that owns the data directory.
+```
+
+**Root Cause:** NFS `root_squash` prevents PostgreSQL from setting ownership to UID 26 (postgres user).
+
+**Solution:**
+
+1. **Configure NFS with no_root_squash** (see Step 5a)
+
+2. **Delete failed PVCs and cluster:**
+   ```bash
+   kubectl delete managementcluster management -n apic
+   kubectl delete pvc --all -n apic
+   ```
+
+3. **Redeploy Management:**
+   ```bash
+   kubectl apply -f 05-management-cr.yaml -n apic
+   ```
+
+### PostgreSQL Pod Evicted: "low on resource: ephemeral-storage"
+
+**Error:**
+```
+The node was low on resource: ephemeral-storage. Threshold quantity: 7853624836, available: 7488688Ki
+```
+
+**Root Cause:** Node has insufficient ephemeral storage (local disk space).
+
+**Solution:**
+
+1. **Delete failed pod to reschedule on different node:**
+   ```bash
+   kubectl delete pod <pod-name> -n apic
+   ```
+
+2. **Kubernetes will automatically reschedule on a node with more space**
+
+3. **Clean up evicted pods:**
+   ```bash
+   kubectl delete pod --field-selector=status.phase=Failed -n apic
+   ```
+
+### Management Stuck in Pending (EDB Cluster Issues)
+
+**Symptoms:**
+- Management cluster status: "Pending"
+- EDB cluster shows "dangling PVCs" or "unrecoverable"
+- Database initialization job fails repeatedly
+
+**Solution:**
+
+1. **Check EDB cluster status:**
+   ```bash
+   kubectl get cluster -n apic
+   kubectl get cluster <cluster-name> -n apic -o yaml | grep -A 20 status
+   ```
+
+2. **If cluster is unrecoverable, delete and redeploy:**
+   ```bash
+   kubectl delete managementcluster management -n apic
+   # Wait for all resources to be cleaned up
+   kubectl get pvc -n apic
+   # Delete any remaining PVCs
+   kubectl delete pvc --all -n apic
+   # Redeploy
+   kubectl apply -f 05-management-cr.yaml -n apic
+   ```
+
+### Default Storage Class Issues
+
+**Problem:** Some PVCs use `openebs-hostpath` instead of NFS
+
+**Solution:** Set nfs-ssd as default storage class (see Step 5b) BEFORE deploying Management
+
+### License Errors
+
+**Error:** `License L-HTFS-UAXYM3 is invalid for the chosen version 12.1.0.1`
+
+**Solution:** Use `L-SBZZ-CNR329` with `use: nonproduction` for v12.1.0.1
+
+### Operator Logs
+
+Check operator logs for detailed error information:
+
+    kubectl logs deployment/ibm-apiconnect -n apic --tail=100
+    kubectl logs deployment/datapower-operator -n apic --tail=100
+    kubectl logs deployment/edb-operator -n apic --tail=100
+
+### CRD Errors
+
+Re-apply with server-side apply:
+
+    kubectl apply --server-side --force-conflicts -f 01-ibm-apiconnect-crds.yaml

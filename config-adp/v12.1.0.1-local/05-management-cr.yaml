@@ -30,39 +30,39 @@ spec:
     admin:
       secretName: federatedapimanagement-admin-client
   cloudManagerEndpoint:
-    ingressClassName: traefik
+    ingressClassName: nginx
     annotations:
       cert-manager.io/issuer: ingress-issuer
     hosts:
-    - name: admin.apic.adp.example.com
+    - name: admin.apic.talos-nginx.zebra-cloud.net
       secretName: cm-endpoint
   apiManagerEndpoint:
-    ingressClassName: traefik
+    ingressClassName: nginx
     annotations:
       cert-manager.io/issuer: ingress-issuer
     hosts:
-    - name: manager.apic.adp.example.com
+    - name: manager.apic.talos-nginx.zebra-cloud.net
       secretName: apim-endpoint
   consumerCatalogEndpoint:
-    ingressClassName: traefik
+    ingressClassName: nginx
     annotations:
       cert-manager.io/issuer: ingress-issuer
     hosts:
-    - name: consumer-catalog.apic.adp.example.com
+    - name: consumer-catalog.apic.talos-nginx.zebra-cloud.net
       secretName: consumer-catalog-endpoint
   platformAPIEndpoint:
-    ingressClassName: traefik
+    ingressClassName: nginx
     annotations:
       cert-manager.io/issuer: ingress-issuer
     hosts:
-    - name: api.apic.adp.example.com
+    - name: api.apic.talos-nginx.zebra-cloud.net
       secretName: api-endpoint
   consumerAPIEndpoint:
-    ingressClassName: traefik
+    ingressClassName: nginx
     annotations:
       cert-manager.io/issuer: ingress-issuer
     hosts:
-    - name: consumer.apic.adp.example.com
+    - name: consumer.apic.talos-nginx.zebra-cloud.net
       secretName: consumer-endpoint
   databaseVolumeClaimTemplate:
     storageClassName: nfs-ssd

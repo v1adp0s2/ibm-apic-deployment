@@ -6,25 +6,21 @@ spec:
   version: 12.1.0.1
   profile: n1xc4.m16
   imagePullSecrets:
-    - harbor-registry-secret
+  - harbor-registry-secret
   imageRegistry: harbor.talos.zebra-cloud.net/apic
-  mgmtPlatformEndpointCASecret:
-    secretName: ingress-ca
-  mgmtConsumerEndpointCASecret:
-    secretName: ingress-ca
   portalAdminEndpoint:
-    ingressClassName: traefik
+    ingressClassName: nginx
     annotations:
       cert-manager.io/issuer: ingress-issuer
     hosts:
-    - name: api.portal.apic.talos.zebra-cloud.net
+    - name: api.portal.apic.talos-nginx.zebra-cloud.net
       secretName: portal-admin
   portalUIEndpoint:
-    ingressClassName: traefik
+    ingressClassName: nginx
     annotations:
       cert-manager.io/issuer: ingress-issuer
     hosts:
-    - name: portal.apic.talos.zebra-cloud.net
+    - name: portal.apic.talos-nginx.zebra-cloud.net
       secretName: portal-web
   databaseVolumeClaimTemplate:
     storageClassName: nfs-ssd

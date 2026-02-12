@@ -12,19 +12,17 @@ spec:
   imagePullSecrets:
   - harbor-registry-secret
   imageRegistry: harbor.talos.zebra-cloud.net/apic
-  mgmtPlatformEndpointCASecret:
-    secretName: ingress-ca
   microServiceSecurity: certManager
   certManagerIssuer:
     name: selfsigning-issuer
     kind: Issuer
   ingestion:
     endpoint:
-      ingressClassName: traefik
+      ingressClassName: nginx
       annotations:
         cert-manager.io/issuer: ingress-issuer
       hosts:
-      - name: ai.apic.talos.zebra-cloud.net
+      - name: ai.apic.talos-nginx.zebra-cloud.net
         secretName: analytics-ai-endpoint
     clientSubjectDN: CN=analytics-ingestion-client,O=cert-manager
   mtlsValidateClient: true

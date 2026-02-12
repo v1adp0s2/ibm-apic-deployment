@@ -10,18 +10,18 @@ spec:
   imageRegistry: harbor.talos.zebra-cloud.net/apic
   apicGatewayServiceV5CompatibilityMode: false
   gatewayEndpoint:
-    ingressClassName: traefik
+    ingressClassName: nginx
     annotations:
       cert-manager.io/issuer: ingress-issuer
     hosts:
-    - name: rgw.apic.talos.zebra-cloud.net
+    - name: rgw.apic.talos-nginx.zebra-cloud.net
       secretName: gwv6-endpoint
   gatewayManagerEndpoint:
-    ingressClassName: traefik
+    ingressClassName: nginx
     annotations:
       cert-manager.io/issuer: ingress-issuer
     hosts:
-    - name: rgwd.apic.talos.zebra-cloud.net
+    - name: rgwd.apic.talos-nginx.zebra-cloud.net
       secretName: gwv6-manager-endpoint
   apicGatewayServiceTLS:
     secretName: gateway-service
