@@ -1,0 +1,130 @@
+================================================================================
+cert-manager v1.13.2 - QUICK START
+================================================================================
+
+Three deployment methods available:
+
+================================================================================
+METHOD 1: ONLINE DEPLOYMENT (Cluster has internet access)
+================================================================================
+
+kubectl apply -f cert-manager-v1.13.2.yaml
+
+kubectl wait --for=condition=available --timeout=300s \
+  deployment/cert-manager -n cert-manager
+
+kubectl wait --for=condition=available --timeout=300s \
+  deployment/cert-manager-webhook -n cert-manager
+
+kubectl wait --for=condition=available --timeout=300s \
+  deployment/cert-manager-cainjector -n cert-manager
+
+kubectl get pods -n cert-manager
+
+✓ Done! Proceed to deploy API Connect
+
+================================================================================
+METHOD 2: OFFLINE DEPLOYMENT (Air-gapped, images already provided)
+================================================================================
+
+Images are pre-downloaded in images/ directory (amd64):
+  - cert-manager-controller-v1.13.2.tar.gz (18 MB)
+  - cert-manager-cainjector-v1.13.2.tar.gz (13 MB)
+  - cert-manager-webhook-v1.13.2.tar.gz (14 MB)
+
+STEP 1: Extract images
+-----------------------
+cd images
+gunzip cert-manager-controller-v1.13.2.tar.gz
+gunzip cert-manager-cainjector-v1.13.2.tar.gz
+gunzip cert-manager-webhook-v1.13.2.tar.gz
+
+STEP 2: Load images
+-------------------
+docker load -i cert-manager-controller-v1.13.2.tar
+docker load -i cert-manager-cainjector-v1.13.2.tar
+docker load -i cert-manager-webhook-v1.13.2.tar
+
+STEP 3: Tag and push to your registry
+--------------------------------------
+export REGISTRY="harbor.example.com/apic"
+
+docker tag quay.io/jetstack/cert-manager-controller:v1.13.2 \
+  $REGISTRY/cert-manager-controller:v1.13.2
+docker tag quay.io/jetstack/cert-manager-cainjector:v1.13.2 \
+  $REGISTRY/cert-manager-cainjector:v1.13.2
+docker tag quay.io/jetstack/cert-manager-webhook:v1.13.2 \
+  $REGISTRY/cert-manager-webhook:v1.13.2
+
+docker push $REGISTRY/cert-manager-controller:v1.13.2
+docker push $REGISTRY/cert-manager-cainjector:v1.13.2
+docker push $REGISTRY/cert-manager-webhook:v1.13.2
+
+STEP 4: Deploy cert-manager
+----------------------------
+cd ..
+
+# If you've run 00-CONFIGURE.txt, REGISTRY_PLACEHOLDER is already replaced:
+kubectl apply -f cert-manager-v1.13.2.yaml
+
+# Otherwise, manually replace the registry:
+sed "s|REGISTRY_PLACEHOLDER|$REGISTRY|g" \
+  cert-manager-v1.13.2.yaml | kubectl apply -f -
+
+STEP 5: Verify
+--------------
+kubectl get pods -n cert-manager
+
+✓ Done! Proceed to deploy API Connect
+
+================================================================================
+VERIFICATION COMMANDS
+================================================================================
+
+# Check pods status
+kubectl get pods -n cert-manager
+
+# Expected output:
+# NAME                                      READY   STATUS    RESTARTS   AGE
+# cert-manager-xxxxxxxxxx-xxxxx             1/1     Running   0          2m
+# cert-manager-cainjector-xxxxxxxxxx-xxxxx  1/1     Running   0          2m
+# cert-manager-webhook-xxxxxxxxxx-xxxxx     1/1     Running   0          2m
+
+# Check deployments
+kubectl get deployments -n cert-manager
+
+# Check CRDs installed
+kubectl get crds | grep cert-manager
+
+# Check cert-manager is responding
+kubectl get clusterissuers
+
+================================================================================
+TROUBLESHOOTING
+================================================================================
+
+Pods in ImagePullBackOff:
+  → Check registry credentials
+  → Verify images exist in registry: docker pull $REGISTRY/cert-manager-controller:v1.13.2
+
+Pods in CrashLoopBackOff:
+  → Check logs: kubectl logs -n cert-manager deployment/cert-manager
+
+Webhook errors:
+  → Check webhook service: kubectl get svc -n cert-manager
+  → Check webhook logs: kubectl logs -n cert-manager deployment/cert-manager-webhook
+
+================================================================================
+NEXT STEPS
+================================================================================
+
+After cert-manager is running:
+
+1. Return to main deployment directory:
+   cd ..
+
+2. Continue with API Connect deployment:
+   - See DEPLOYMENT-GUIDE.txt Section 4 (cert-manager resources)
+   - Deploy ingress issuer: kubectl apply -f 04-ingress-issuer.yaml
+
+================================================================================

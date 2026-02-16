@@ -1,0 +1,53 @@
+---
+# Busybox Pod for Clearing PVC Contents
+#
+# Usage:
+# 1. Update the PVC names in the volumes section
+# 2. Update the namespace if needed
+# 3. kubectl apply -f clear-pvc-pod.yaml
+# 4. kubectl logs busybox-clear-pvc -n <namespace>
+# 5. kubectl delete -f clear-pvc-pod.yaml
+#
+apiVersion: v1
+kind: Pod
+metadata:
+  name: busybox-clear-pvc
+  namespace: apic
+spec:
+  containers:
+  - name: busybox
+    image: harbor.talos.zebra-cloud.net/apic/busybox:1.37-amd64
+    command:
+    - sh
+    - -c
+    - |
+      echo "Starting PVC cleanup..."
+      echo "Clearing /data PVC..."
+      rm -rf /data/* /data/.* 2>/dev/null || true
+      echo "/data cleared"
+
+      echo "Clearing /wal PVC..."
+      rm -rf /wal/* /wal/.* 2>/dev/null || true
+      echo "/wal cleared"
+
+      echo "PVC cleanup completed successfully"
+      echo "Sleeping for 1 hour (pod will be manually deleted)"
+      sleep 3600
+    volumeMounts:
+    - name: data
+      mountPath: /data
+    - name: wal
+      mountPath: /wal
+    securityContext:
+      runAsUser: 0
+      runAsGroup: 0
+  volumes:
+  - name: data
+    persistentVolumeClaim:
+      claimName: management-99543590-db-1
+  - name: wal
+    persistentVolumeClaim:
+      claimName: management-99543590-db-1-wal
+  imagePullSecrets:
+  - name: harbor-registry-secret
+  restartPolicy: Never

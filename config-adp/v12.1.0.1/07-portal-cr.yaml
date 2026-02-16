@@ -2,55 +2,43 @@ apiVersion: portal.apiconnect.ibm.com/v1beta1
 kind: PortalCluster
 metadata:
   name: portal
+  namespace: NAMESPACE_PLACEHOLDER
 spec:
   version: 12.1.0.1
-  profile: n1xc4.m16
+  profile: n3xc4.m12
   imagePullSecrets:
-    - harbor-registry-secret
-  imageRegistry: harbor.talos.zebra-cloud.net/apic
-  mgmtPlatformEndpointCASecret:
-    secretName: ingress-ca
-  mgmtConsumerEndpointCASecret:
-    secretName: ingress-ca
-  portalAdminEndpoint:
-    ingressClassName: traefik
+  - REGISTRY_SECRET_PLACEHOLDER
+  imageRegistry: REGISTRY_PLACEHOLDER
+  portalDirectorEndpoint:
+    ingressClassName: INGRESS_CLASS_PLACEHOLDER
     annotations:
       cert-manager.io/issuer: ingress-issuer
     hosts:
-    - name: api.portal.apic.talos.zebra-cloud.net
+    - name: api.portal.DNS_PLACEHOLDER
       secretName: portal-admin
-  portalUIEndpoint:
-    ingressClassName: traefik
+  portalWebEndpoint:
+    ingressClassName: INGRESS_CLASS_PLACEHOLDER
     annotations:
       cert-manager.io/issuer: ingress-issuer
     hosts:
-    - name: portal.apic.talos.zebra-cloud.net
+    - name: portal.DNS_PLACEHOLDER
       secretName: portal-web
   databaseVolumeClaimTemplate:
-    storageClassName: nfs-ssd
-    volumeSize: 64Gi
-  databaseLogsVolumeClaimTemplate:
-    storageClassName: nfs-ssd
-    volumeSize: 12Gi
-  webVolumeClaimTemplate:
-    storageClassName: nfs-ssd
-    volumeSize: 64Gi
-  backupVolumeClaimTemplate:
-    storageClassName: nfs-ssd
-    volumeSize: 15Gi
-  adminVolumeClaimTemplate:
-    storageClassName: nfs-ssd
-    volumeSize: 6Gi
-  certVolumeClaimTemplate:
-    storageClassName: nfs-ssd
-    volumeSize: 4Gi
-  adminClientSubjectDN: CN=portal-admin-client,O=cert-manager
-  microServiceSecurity: certManager
-  certManagerIssuer:
-    name: selfsigning-issuer
-    kind: Issuer
+    storageClassName: STORAGE_CLASS_PLACEHOLDER
+    volumeSize: 50Gi
+  databaseLogVolumeClaimTemplate:
+    storageClassName: STORAGE_CLASS_PLACEHOLDER
+    volumeSize: 2Gi
+  adminStorageVolumeClaimTemplate:
+    storageClassName: STORAGE_CLASS_PLACEHOLDER
+    volumeSize: 5Gi
+  backupStorageVolumeClaimTemplate:
+    storageClassName: STORAGE_CLASS_PLACEHOLDER
+    volumeSize: 5Gi
+  wwwStorageVolumeClaimTemplate:
+    storageClassName: STORAGE_CLASS_PLACEHOLDER
+    volumeSize: 5Gi
   license:
     accept: true
     use: nonproduction
     license: L-SBZZ-CNR329
-  mtlsValidateClient: true

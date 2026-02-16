@@ -1,0 +1,514 @@
+================================================================================
+IBM API CONNECT v12.1.0.1 - DEPLOYMENT GUIDE
+================================================================================
+
+Step-by-step commands for deploying API Connect with Contour ingress.
+All images from your container registry.
+
+IMPORTANT: Complete configuration first (see 00-CONFIGURE.txt)
+
+================================================================================
+SECTION 1: PREREQUISITES CHECK
+================================================================================
+
+# 1.1 Verify kubectl access
+kubectl cluster-info
+kubectl get nodes
+
+# 1.2 Check cert-manager is installed
+kubectl get pods -n cert-manager
+
+# Expected output: 3 pods running (cert-manager, webhook, cainjector)
+
+# If cert-manager is NOT installed:
+# - cert-manager v1.13.2 is included in the cert-manager/ directory
+# - For online deployment: kubectl apply -f cert-manager/cert-manager-v1.13.2.yaml
+# - For offline deployment: See cert-manager/QUICK-START.txt
+# - Full documentation: See cert-manager/README.md
+
+# 1.3 Check Contour is installed
+kubectl get pods -n projectcontour
+
+# Expected output: contour deployment and envoy daemonset pods
+
+# 1.4 Get Contour LoadBalancer IP
+kubectl get svc -n projectcontour envoy -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+
+# Configure your DNS wildcard to point to this IP
+
+# 1.5 Verify storage class exists
+kubectl get storageclass
+
+# Note your storage class name for configuration
+
+# 1.6 Verify ingress class exists
+kubectl get ingressclass
+
+# Note your ingress class name for configuration
+
+================================================================================
+SECTION 2: CONFIGURATION
+================================================================================
+
+# 2.1 Navigate to deployment directory
+cd /path/to/config-adp/v12.1.0.1/
+
+# 2.2 Set environment variables (customize these!)
+export NAMESPACE="apic"
+export DNS_DOMAIN="adp.example.com"
+export INGRESS_CLASS="contour"
+export STORAGE_CLASS="nfs-ssd"
+export REGISTRY="harbor.example.com/apic"
+export REGISTRY_SECRET="harbor-registry-secret"
+
+# 2.3 Run configuration replacement
+find . -type f \( -name "*.yaml" -o -name "*.md" \) \
+  -exec sed -i.bak \
+    -e "s/NAMESPACE_PLACEHOLDER/$NAMESPACE/g" \
+    -e "s/DNS_PLACEHOLDER/$DNS_DOMAIN/g" \
+    -e "s/INGRESS_CLASS_PLACEHOLDER/$INGRESS_CLASS/g" \
+    -e "s/STORAGE_CLASS_PLACEHOLDER/$STORAGE_CLASS/g" \
+    -e "s|REGISTRY_PLACEHOLDER|$REGISTRY|g" \
+    -e "s/REGISTRY_SECRET_PLACEHOLDER/$REGISTRY_SECRET/g" \
+  {} \;
+
+# 2.4 Verify configuration
+grep -r "PLACEHOLDER" . --include="*.yaml"
+
+# If above returns results, fix those placeholders manually
+
+# 2.5 Clean up backup files
+find . -type f -name "*.bak" -delete
+
+================================================================================
+SECTION 3: NAMESPACE AND SECRETS
+================================================================================
+
+# 3.1 Create namespace
+kubectl create namespace $NAMESPACE
+
+# 3.2 Create container registry secret
+kubectl create secret docker-registry $REGISTRY_SECRET \
+  --namespace=$NAMESPACE \
+  --docker-server=<YOUR_REGISTRY_SERVER> \
+  --docker-username=<YOUR_REGISTRY_USER> \
+  --docker-password=<YOUR_REGISTRY_PASSWORD>
+
+# Example for Harbor:
+kubectl create secret docker-registry harbor-registry-secret \
+  --namespace=apic \
+  --docker-server=harbor.example.com \
+  --docker-username=admin \
+  --docker-password='HarborPassword123!'
+
+# 3.3 Verify secret
+kubectl get secret -n $NAMESPACE $REGISTRY_SECRET
+
+# 3.4 (Optional) Create admin password secret
+kubectl create secret generic management-admin-secret \
+  --namespace=$NAMESPACE \
+  --from-literal=password='Admin123!'
+
+# 3.5 (Optional) Create DataPower admin credentials
+kubectl create secret generic datapower-admin-credentials \
+  --namespace=$NAMESPACE \
+  --from-literal=password='DataPowerAdmin123!'
+
+================================================================================
+SECTION 4: CERT-MANAGER RESOURCES
+================================================================================
+
+# 4.1 Apply cert-manager issuers and certificates
+kubectl apply -f 04-ingress-issuer.yaml -n $NAMESPACE
+
+# 4.2 Wait for certificates to be ready (this takes 1-2 minutes)
+kubectl get certificates -n $NAMESPACE
+
+# Watch certificates until all show READY=True
+kubectl get certificates -n $NAMESPACE -w
+
+# Press Ctrl+C when all certificates are ready
+
+# 4.3 Verify certificate secrets created
+kubectl get secrets -n $NAMESPACE | grep ingress-ca
+
+# Expected: ingress-ca secret exists
+
+================================================================================
+SECTION 5: CONTOUR INGRESSCLASS
+================================================================================
+
+# 5.1 Apply Contour IngressClass
+kubectl apply -f 09-contour-ingressclass.yaml
+
+# 5.2 Verify IngressClass
+kubectl get ingressclass
+
+# Should see your configured ingress class
+
+================================================================================
+SECTION 6: API CONNECT OPERATORS
+================================================================================
+
+# 6.1 Install API Connect CRDs
+kubectl apply -f 01-ibm-apiconnect-crds.yaml
+
+# Wait for CRDs to be established
+sleep 10
+
+# 6.2 Install API Connect Operator
+kubectl apply -f 02-ibm-apiconnect-operator.yaml -n $NAMESPACE
+
+# 6.3 Install DataPower Operator
+kubectl apply -f 03-ibm-datapower-operator.yaml -n $NAMESPACE
+
+# 6.4 Wait for operators to be ready
+kubectl get pods -n $NAMESPACE
+
+# Watch for ibm-apiconnect and datapower-operator pods to be Running
+kubectl get pods -n $NAMESPACE -w
+
+# Press Ctrl+C when both operators are running
+
+# 6.5 Verify operator is ready
+kubectl wait --for=condition=available --timeout=300s \
+  deployment/ibm-apiconnect -n $NAMESPACE
+
+================================================================================
+SECTION 7: DEPLOY MANAGEMENT SUBSYSTEM
+================================================================================
+
+# 7.1 Deploy Management
+kubectl apply -f 05-management-cr.yaml
+
+# 7.2 Watch Management deployment (this takes 15-30 minutes)
+kubectl get managementcluster -n $NAMESPACE -w
+
+# Wait until STATUS shows "Running" and READY shows full count (e.g., 21/21)
+# Press Ctrl+C when ready
+
+# 7.3 Check Management pods
+kubectl get pods -n $NAMESPACE -l app.kubernetes.io/instance=management
+
+# 7.4 Check schema upgrade jobs
+kubectl get jobs -n $NAMESPACE | grep management-up
+
+# All jobs should show COMPLETIONS 1/1
+
+# 7.5 Deploy Management HTTPProxy
+kubectl apply -f 10-httpproxy-management.yaml
+
+# 7.6 Verify HTTPProxy resources
+kubectl get httpproxy -n $NAMESPACE
+
+# All Management HTTPProxies should show STATUS "valid"
+
+# 7.7 Test Management endpoint
+curl -vk https://admin.$DNS_DOMAIN/admin
+
+# Should return HTTP 200 or 301 redirect
+
+# 7.8 Get admin password
+kubectl get secret -n $NAMESPACE management-admin-secret \
+  -o jsonpath='{.data.password}' | base64 -d && echo
+
+# 7.9 Access Cloud Manager
+# Open browser: https://admin.$DNS_DOMAIN/admin
+# Login with username: admin and the password from step 7.8
+
+================================================================================
+SECTION 8: DEPLOY GATEWAY SUBSYSTEM
+================================================================================
+
+# 8.1 Deploy Gateway
+kubectl apply -f 06-apigateway-cr.yaml
+
+# 8.2 Watch Gateway deployment (this takes 5-10 minutes)
+kubectl get gatewaycluster -n $NAMESPACE -w
+
+# Wait until STATUS shows "Running" and READY shows 3/3
+# Press Ctrl+C when ready
+
+# 8.3 Check Gateway pods
+kubectl get pods -n $NAMESPACE -l app.kubernetes.io/instance=gwv6
+
+# 8.4 Deploy Gateway HTTPProxy
+kubectl apply -f 11-httpproxy-gateway.yaml
+
+# 8.5 Verify HTTPProxy resources
+kubectl get httpproxy -n $NAMESPACE | grep gwv6
+
+# Both Gateway HTTPProxies should show STATUS "valid"
+
+# 8.6 Test Gateway endpoint
+curl -vk https://rgw.$DNS_DOMAIN
+
+# Should return DataPower response
+
+================================================================================
+SECTION 9: DEPLOY PORTAL SUBSYSTEM
+================================================================================
+
+# 9.1 Deploy Portal
+kubectl apply -f 07-portal-cr.yaml
+
+# 9.2 Watch Portal deployment (this takes 10-15 minutes)
+kubectl get portalcluster -n $NAMESPACE -w
+
+# Wait until STATUS shows "Running" and READY shows full count
+# Press Ctrl+C when ready
+
+# 9.3 Check Portal pods
+kubectl get pods -n $NAMESPACE -l app.kubernetes.io/instance=portal
+
+# 9.4 Get Portal www service name (this is dynamically generated)
+kubectl get service -n $NAMESPACE | grep www
+
+# Example output: portal-abc12345-www
+
+# 9.5 Update HTTPProxy with actual www service name
+export PORTAL_WWW_SERVICE=$(kubectl get service -n $NAMESPACE | grep www | awk '{print $1}')
+echo "Portal www service: $PORTAL_WWW_SERVICE"
+
+sed -i.bak "s/PORTAL_WWW_SERVICE_PLACEHOLDER/$PORTAL_WWW_SERVICE/g" 12-httpproxy-portal.yaml
+
+# 9.6 Deploy Portal HTTPProxy
+kubectl apply -f 12-httpproxy-portal.yaml
+
+# 9.7 Verify HTTPProxy resources
+kubectl get httpproxy -n $NAMESPACE | grep portal
+
+# Both Portal HTTPProxies should show STATUS "valid"
+
+# 9.8 Test Portal endpoint
+curl -vk https://api.portal.$DNS_DOMAIN
+
+================================================================================
+SECTION 10: DEPLOY ANALYTICS SUBSYSTEM
+================================================================================
+
+# 10.1 Deploy Analytics
+kubectl apply -f 08-analytics-cr.yaml
+
+# 10.2 Watch Analytics deployment (this takes 10-15 minutes)
+kubectl get analyticscluster -n $NAMESPACE -w
+
+# Wait until STATUS shows "Running" and READY shows full count
+# Press Ctrl+C when ready
+
+# 10.3 Check Analytics pods
+kubectl get pods -n $NAMESPACE -l app.kubernetes.io/instance=analytics
+
+# 10.4 Deploy Analytics HTTPProxy
+kubectl apply -f 13-httpproxy-analytics.yaml
+
+# 10.5 Verify HTTPProxy resources
+kubectl get httpproxy -n $NAMESPACE | grep analytics
+
+# Analytics HTTPProxy should show STATUS "valid"
+
+# 10.6 Test Analytics endpoint
+curl -vk https://ai.$DNS_DOMAIN
+
+================================================================================
+SECTION 11: VERIFICATION
+================================================================================
+
+# 11.1 Check all subsystems
+kubectl get managementcluster,gatewaycluster,portalcluster,analyticscluster -n $NAMESPACE
+
+# All should show STATUS "Running"
+
+# 11.2 Check all HTTPProxy resources
+kubectl get httpproxy -n $NAMESPACE
+
+# All should show STATUS "valid"
+
+# 11.3 Check all pods
+kubectl get pods -n $NAMESPACE
+
+# All pods should be Running (except Completed jobs)
+
+# 11.4 Check PostgreSQL clusters
+kubectl get cluster -n $NAMESPACE
+
+# All clusters should show "Cluster in healthy state"
+
+# 11.5 Check ingress resources
+kubectl get ingress -n $NAMESPACE
+
+# 11.6 Check services
+kubectl get svc -n $NAMESPACE
+
+# 11.7 Test all endpoints
+echo "Testing Management endpoints..."
+curl -vk https://admin.$DNS_DOMAIN/admin 2>&1 | grep "HTTP"
+curl -vk https://manager.$DNS_DOMAIN/manager 2>&1 | grep "HTTP"
+curl -vk https://api.$DNS_DOMAIN 2>&1 | grep "HTTP"
+curl -vk https://consumer.$DNS_DOMAIN 2>&1 | grep "HTTP"
+
+echo "Testing Gateway endpoints..."
+curl -vk https://rgw.$DNS_DOMAIN 2>&1 | grep "HTTP"
+curl -vk https://rgwd.$DNS_DOMAIN 2>&1 | grep "HTTP"
+
+echo "Testing Portal endpoints..."
+curl -vk https://api.portal.$DNS_DOMAIN 2>&1 | grep "HTTP"
+curl -vk https://portal.$DNS_DOMAIN 2>&1 | grep "HTTP"
+
+echo "Testing Analytics endpoints..."
+curl -vk https://ai.$DNS_DOMAIN 2>&1 | grep "HTTP"
+
+================================================================================
+SECTION 12: POST-DEPLOYMENT CONFIGURATION
+================================================================================
+
+# 12.1 Access Cloud Manager
+# URL: https://admin.$DNS_DOMAIN/admin
+# Username: admin
+# Password: (from secret management-admin-secret)
+
+# 12.2 First Login Configuration
+# - Change admin password (required on first login)
+# - Configure mail server (optional)
+# - Configure user registries (optional)
+
+# 12.3 Register Gateway Service
+# In Cloud Manager > Resources > Gateway Services
+# Add Gateway: https://rgwd.$DNS_DOMAIN
+
+# 12.4 Register Portal Service
+# In Cloud Manager > Resources > Portal Services
+# Add Portal: https://api.portal.$DNS_DOMAIN
+
+# 12.5 Register Analytics Service
+# In Cloud Manager > Resources > Analytics Services
+# Add Analytics: https://ai.$DNS_DOMAIN
+
+# 12.6 Create Provider Organization
+# In Cloud Manager > Provider Organizations > Add
+
+# 12.7 Create Catalog
+# In API Manager > Catalogs > Add
+
+# 12.8 Configure Gateway
+# In Catalog Settings > Gateway Services
+# Select your registered Gateway service
+
+# 12.9 Configure Portal
+# In Catalog Settings > Portal
+# Select your registered Portal service
+
+# 12.10 Configure Analytics
+# In Catalog Settings > Analytics
+# Select your registered Analytics service
+
+================================================================================
+SECTION 13: MONITORING COMMANDS
+================================================================================
+
+# 13.1 Watch all resources
+watch kubectl get managementcluster,gatewaycluster,portalcluster,analyticscluster,httpproxy,pods -n $NAMESPACE
+
+# 13.2 Check resource usage
+kubectl top nodes
+kubectl top pods -n $NAMESPACE --sort-by=memory
+
+# 13.3 View logs
+kubectl logs -n $NAMESPACE deployment/ibm-apiconnect --tail=50
+kubectl logs -n $NAMESPACE deployment/management-apim --tail=50
+
+# 13.4 Check events
+kubectl get events -n $NAMESPACE --sort-by='.lastTimestamp' | tail -20
+
+# 13.5 Get subsystem details
+kubectl get managementcluster -n $NAMESPACE -o yaml
+kubectl describe managementcluster -n $NAMESPACE management
+
+================================================================================
+SECTION 14: TROUBLESHOOTING
+================================================================================
+
+# 14.1 If pods are in ImagePullBackOff
+kubectl describe pod -n $NAMESPACE <pod-name>
+kubectl get secret -n $NAMESPACE $REGISTRY_SECRET
+
+# 14.2 If HTTPProxy shows invalid
+kubectl describe httpproxy -n $NAMESPACE <httpproxy-name>
+kubectl logs -n projectcontour deployment/contour
+
+# 14.3 If certificate not ready
+kubectl describe certificate -n $NAMESPACE <cert-name>
+kubectl logs -n cert-manager deployment/cert-manager
+
+# 14.4 If PostgreSQL not starting
+kubectl get cluster -n $NAMESPACE
+kubectl describe cluster -n $NAMESPACE <cluster-name>
+kubectl get pvc -n $NAMESPACE
+
+# 14.5 If subsystem stuck in Pending
+kubectl get managementcluster -n $NAMESPACE -o yaml
+kubectl logs -n $NAMESPACE deployment/ibm-apiconnect
+
+# 14.6 Check Contour routes
+kubectl get httpproxy -n $NAMESPACE -o wide
+kubectl logs -n projectcontour daemonset/envoy
+
+# 14.7 Network connectivity test
+kubectl run -it --rm debug-curl --image=curlimages/curl --restart=Never -- \
+  curl -vk https://admin.$DNS_DOMAIN/admin
+
+================================================================================
+SECTION 15: BACKUP PROCEDURES
+================================================================================
+
+# 15.1 Backup Management database
+kubectl exec -n $NAMESPACE $(kubectl get pod -n $NAMESPACE -l cluster-name=management -o name | head -1) -- \
+  pg_dump -U postgres -d apim > management-backup-$(date +%Y%m%d).sql
+
+# 15.2 Backup Portal database
+kubectl exec -n $NAMESPACE $(kubectl get pod -n $NAMESPACE -l cluster-name=portal -o name | head -1) -- \
+  pg_dump -U postgres -d portal > portal-backup-$(date +%Y%m%d).sql
+
+# 15.3 Export configurations
+kubectl get managementcluster -n $NAMESPACE -o yaml > management-config-backup.yaml
+kubectl get gatewaycluster -n $NAMESPACE -o yaml > gateway-config-backup.yaml
+kubectl get portalcluster -n $NAMESPACE -o yaml > portal-config-backup.yaml
+kubectl get analyticscluster -n $NAMESPACE -o yaml > analytics-config-backup.yaml
+
+# 15.4 Export secrets
+kubectl get secret -n $NAMESPACE -o yaml > secrets-backup.yaml
+
+# IMPORTANT: Keep secrets-backup.yaml secure!
+
+================================================================================
+SECTION 16: ENDPOINTS REFERENCE
+================================================================================
+
+Management Subsystem:
+  Cloud Manager:      https://admin.$DNS_DOMAIN/admin
+  API Manager:        https://manager.$DNS_DOMAIN/manager
+  Platform API:       https://api.$DNS_DOMAIN
+  Consumer API:       https://consumer.$DNS_DOMAIN
+  Consumer Catalog:   https://consumer-catalog.$DNS_DOMAIN
+
+Gateway Subsystem:
+  Gateway:            https://rgw.$DNS_DOMAIN
+  Gateway Manager:    https://rgwd.$DNS_DOMAIN
+
+Portal Subsystem:
+  Portal Director:    https://api.portal.$DNS_DOMAIN
+  Portal Web:         https://portal.$DNS_DOMAIN
+
+Analytics Subsystem:
+  Analytics:          https://ai.$DNS_DOMAIN
+
+Contour:
+  LoadBalancer:       $(kubectl get svc -n projectcontour envoy -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+
+================================================================================
+END OF DEPLOYMENT GUIDE
+================================================================================
+
+For maintenance, reset, and uninstall procedures, see README.md
+For busybox PVC cleanup utility, see busybox/README.md
+For configuration reference, see 00-CONFIGURE.txt

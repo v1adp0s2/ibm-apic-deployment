@@ -1,0 +1,40 @@
+---
+# Portal Director (Admin API)
+apiVersion: projectcontour.io/v1
+kind: HTTPProxy
+metadata:
+  name: portal-portal-director
+  namespace: apic
+spec:
+  virtualhost:
+    fqdn: api.portal.apic.talos-pc.zebra-cloud.net
+    tls:
+      secretName: portal-admin
+  routes:
+  - services:
+    - name: portal-nginx
+      port: 4443
+      protocol: tls
+      validation:
+        caSecret: portal-ca
+        subjectName: portal-nginx.apic.svc.cluster.local
+---
+# Portal Web (Developer Portal UI)
+apiVersion: projectcontour.io/v1
+kind: HTTPProxy
+metadata:
+  name: portal-portal-web
+  namespace: apic
+spec:
+  virtualhost:
+    fqdn: portal.apic.talos-pc.zebra-cloud.net
+    tls:
+      secretName: portal-web
+  routes:
+  - services:
+    - name: portal-cef9da17-www
+      port: 4443
+      protocol: tls
+      validation:
+        caSecret: portal-ca
+        subjectName: portal-cef9da17-www.apic.svc.cluster.local

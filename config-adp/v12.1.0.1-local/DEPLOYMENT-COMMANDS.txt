@@ -1,0 +1,557 @@
+================================================================================
+IBM API CONNECT v12.1.0.1 - DEPLOYMENT COMMANDS REFERENCE
+================================================================================
+Talos Kubernetes Cluster with Contour Ingress Controller
+All images from Harbor: harbor.talos.zebra-cloud.net/apic
+
+IMPORTANT: Set KUBECONFIG before running any commands
+export KUBECONFIG=/Volumes/Data/Users/vladimir/git/ibm/demos/ibm-apic-deployment/talos/talos02-kubeconfig.yaml
+
+================================================================================
+SECTION 1: INITIAL DEPLOYMENT
+================================================================================
+
+# 1.1 Create namespace
+kubectl create namespace apic
+
+# 1.2 Create Harbor registry secret
+kubectl create secret docker-registry harbor-registry-secret \
+  --namespace=apic \
+  --docker-server=harbor.talos.zebra-cloud.net \
+  --docker-username=admin \
+  --docker-password=<HARBOR_PASSWORD>
+
+# 1.3 Install cert-manager (if not already installed)
+kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.2/cert-manager.yaml
+
+# Wait for cert-manager to be ready
+kubectl wait --for=condition=available --timeout=300s deployment/cert-manager -n cert-manager
+kubectl wait --for=condition=available --timeout=300s deployment/cert-manager-webhook -n cert-manager
+kubectl wait --for=condition=available --timeout=300s deployment/cert-manager-cainjector -n cert-manager
+
+# 1.4 Create self-signed issuer
+kubectl apply -f /Volumes/Data/Users/vladimir/git/ibm/demos/ibm-apic-deployment/config-adp/v12.1.0.1-local/00-cert-manager-issuer.yaml
+
+# 1.5 Install Contour ingress controller
+kubectl apply -f https://projectcontour.io/quickstart/v1.33.1/contour.yaml
+
+# Label Contour namespace for privileged pods
+kubectl label namespace projectcontour \
+  pod-security.kubernetes.io/enforce=privileged \
+  pod-security.kubernetes.io/warn=privileged \
+  pod-security.kubernetes.io/audit=privileged --overwrite
+
+# Wait for Contour to be ready
+kubectl wait --for=condition=available --timeout=300s deployment/contour -n projectcontour
+kubectl rollout status daemonset envoy -n projectcontour --timeout=300s
+
+# 1.6 Create Contour IngressClass
+kubectl apply -f /Volumes/Data/Users/vladimir/git/ibm/demos/ibm-apic-deployment/config-adp/v12.1.0.1-local/contour-ingressclass.yaml
+
+# 1.7 Install IBM API Connect Operator
+kubectl apply -f /Volumes/Data/Users/vladimir/git/ibm/demos/ibm-apic-deployment/config-adp/v12.1.0.1-local/01-operator.yaml
+
+# Wait for operator to be ready
+kubectl wait --for=condition=available --timeout=300s deployment/ibm-apiconnect -n apic
+
+# 1.8 Deploy Management Subsystem
+kubectl apply -f /Volumes/Data/Users/vladimir/git/ibm/demos/ibm-apic-deployment/config-adp/v12.1.0.1-local/05-management-cr.yaml
+
+# Wait for Management to initialize (this takes 15-30 minutes)
+kubectl get managementcluster -n apic -w
+
+# 1.9 Create Management HTTPProxy resources
+kubectl apply -f /Volumes/Data/Users/vladimir/git/ibm/demos/ibm-apic-deployment/config-adp/v12.1.0.1-local/contour-httpproxy-management.yaml
+
+# Verify HTTPProxy resources are valid
+kubectl get httpproxy -n apic
+
+# 1.10 Deploy Gateway Subsystem
+kubectl apply -f /Volumes/Data/Users/vladimir/git/ibm/demos/ibm-apic-deployment/config-adp/v12.1.0.1-local/06-apigateway-cr.yaml
+
+# Wait for Gateway to be ready (this takes 5-10 minutes)
+kubectl get gatewaycluster -n apic -w
+
+# 1.11 Create Gateway HTTPProxy resources
+kubectl apply -f /Volumes/Data/Users/vladimir/git/ibm/demos/ibm-apic-deployment/config-adp/v12.1.0.1-local/contour-httpproxy-gateway.yaml
+
+# 1.12 Deploy Portal Subsystem
+kubectl apply -f /Volumes/Data/Users/vladimir/git/ibm/demos/ibm-apic-deployment/config-adp/v12.1.0.1-local/07-portal-cr.yaml
+
+# Wait for Portal to be ready (this takes 10-15 minutes)
+kubectl get portalcluster -n apic -w
+
+# 1.13 Create Portal HTTPProxy resources
+kubectl apply -f /Volumes/Data/Users/vladimir/git/ibm/demos/ibm-apic-deployment/config-adp/v12.1.0.1-local/contour-httpproxy-portal.yaml
+
+# 1.14 Deploy Analytics Subsystem
+kubectl apply -f /Volumes/Data/Users/vladimir/git/ibm/demos/ibm-apic-deployment/config-adp/v12.1.0.1-local/08-analytics-cr.yaml
+
+# Wait for Analytics to be ready (this takes 10-15 minutes)
+kubectl get analyticscluster -n apic -w
+
+# 1.15 Create Analytics HTTPProxy resources
+kubectl apply -f /Volumes/Data/Users/vladimir/git/ibm/demos/ibm-apic-deployment/config-adp/v12.1.0.1-local/contour-httpproxy-analytics.yaml
+
+# 1.16 Verify all subsystems are running
+kubectl get managementcluster,gatewaycluster,portalcluster,analyticscluster -n apic
+
+# 1.17 Verify all HTTPProxy resources are valid
+kubectl get httpproxy -n apic
+
+================================================================================
+SECTION 2: MONITORING AND VERIFICATION
+================================================================================
+
+# 2.1 Check all pods status
+kubectl get pods -n apic
+
+# 2.2 Check Management subsystem status
+kubectl get managementcluster -n apic
+kubectl get pods -n apic -l app.kubernetes.io/instance=management
+
+# 2.3 Check Gateway subsystem status
+kubectl get gatewaycluster -n apic
+kubectl get pods -n apic -l app.kubernetes.io/instance=gwv6
+
+# 2.4 Check Portal subsystem status
+kubectl get portalcluster -n apic
+kubectl get pods -n apic -l app.kubernetes.io/instance=portal
+
+# 2.5 Check Analytics subsystem status
+kubectl get analyticscluster -n apic
+kubectl get pods -n apic -l app.kubernetes.io/instance=analytics
+
+# 2.6 Check PostgreSQL clusters
+kubectl get cluster -n apic
+
+# 2.7 Check Contour LoadBalancer IP
+kubectl get svc -n projectcontour envoy -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+
+# 2.8 Check all ingress resources
+kubectl get ingress -n apic
+
+# 2.9 Check all HTTPProxy resources
+kubectl get httpproxy -n apic
+
+# 2.10 Test endpoint connectivity (example)
+curl -vk https://admin.apic.talos-pc.zebra-cloud.net/admin
+
+================================================================================
+SECTION 3: COMPONENT RESET PROCEDURES
+================================================================================
+
+# 3.1 RESET MANAGEMENT SUBSYSTEM
+# WARNING: This will delete all Management data including users, APIs, products
+
+# Scale down Management deployments
+kubectl scale deployment -n apic --replicas=0 \
+  management-apim \
+  management-lur \
+  management-ui \
+  management-analytics-ui \
+  management-analytics-proxy \
+  management-portal-proxy \
+  management-websocket-proxy \
+  management-api-studio \
+  management-audit-logging \
+  management-client-downloads-server \
+  management-consumer-catalog \
+  management-juhu \
+  management-ldap \
+  management-taskmanager
+
+# Wait for all Management pods to terminate (except EDB operator, NATS, S3)
+kubectl wait --for=delete pod -n apic -l app.kubernetes.io/instance=management \
+  --field-selector=status.phase!=Succeeded --timeout=300s
+
+# Delete PostgreSQL cluster
+kubectl delete cluster -n apic management-99543590-db
+
+# Wait for cluster to be deleted
+kubectl wait --for=delete cluster -n apic management-99543590-db --timeout=300s
+
+# Get PVC names
+kubectl get pvc -n apic | grep management-99543590-db
+
+# Load busybox image (if not already loaded)
+docker load -i /Volumes/Data/Users/vladimir/git/ibm/demos/ibm-apic-deployment/config-adp/v12.1.0.1-local/busybox/busybox-1.37-amd64.tar
+docker tag busybox:1.37-amd64 harbor.talos.zebra-cloud.net/apic/busybox:1.37-amd64
+docker push harbor.talos.zebra-cloud.net/apic/busybox:1.37-amd64
+
+# Edit the busybox pod manifest to clear the correct PVCs
+# File: /Volumes/Data/Users/vladimir/git/ibm/demos/ibm-apic-deployment/config-adp/v12.1.0.1-local/busybox/clear-pvc-pod.yaml
+# Update claimName fields to match your PVC names
+
+# Apply busybox pod to clear PVCs
+kubectl apply -f /Volumes/Data/Users/vladimir/git/ibm/demos/ibm-apic-deployment/config-adp/v12.1.0.1-local/busybox/clear-pvc-pod.yaml
+
+# Wait for busybox to complete clearing
+kubectl logs -n apic busybox-clear-pvc -f
+
+# Delete busybox pod
+kubectl delete pod -n apic busybox-clear-pvc
+
+# Delete PVCs
+kubectl delete pvc -n apic management-99543590-db-1
+kubectl delete pvc -n apic management-99543590-db-1-wal
+
+# Delete admin password secret (to reset password)
+kubectl delete secret -n apic management-admin-secret
+
+# Create new admin password secret
+kubectl create secret generic management-admin-secret \
+  --namespace=apic \
+  --from-literal=password='Admin123!'
+
+# Re-apply Management CR (will recreate database)
+kubectl apply -f /Volumes/Data/Users/vladimir/git/ibm/demos/ibm-apic-deployment/config-adp/v12.1.0.1-local/05-management-cr.yaml
+
+# Monitor recovery
+kubectl get managementcluster -n apic -w
+kubectl get pods -n apic -l app.kubernetes.io/instance=management
+
+# Wait for schema upgrade jobs to complete
+kubectl get jobs -n apic | grep management-up
+
+# 3.2 RESET GATEWAY SUBSYSTEM
+# WARNING: This will delete all Gateway configuration and runtime data
+
+# Delete Gateway CR
+kubectl delete gatewaycluster -n apic gwv6
+
+# Wait for Gateway pods to terminate
+kubectl wait --for=delete pod -n apic -l app.kubernetes.io/instance=gwv6 --timeout=300s
+
+# Delete Gateway PVCs
+kubectl delete pvc -n apic -l app.kubernetes.io/instance=gwv6
+
+# Re-apply Gateway CR
+kubectl apply -f /Volumes/Data/Users/vladimir/git/ibm/demos/ibm-apic-deployment/config-adp/v12.1.0.1-local/06-apigateway-cr.yaml
+
+# Monitor recovery
+kubectl get gatewaycluster -n apic -w
+
+# 3.3 RESET PORTAL SUBSYSTEM
+# WARNING: This will delete all Portal sites and developer data
+
+# Scale down Portal deployments
+kubectl scale deployment -n apic --replicas=0 \
+  portal-nginx \
+  portal-admin
+
+# Scale down Portal StatefulSets
+kubectl scale statefulset -n apic --replicas=0 \
+  $(kubectl get statefulset -n apic -l app.kubernetes.io/instance=portal -o name | cut -d'/' -f2)
+
+# Wait for Portal pods to terminate
+kubectl wait --for=delete pod -n apic -l app.kubernetes.io/instance=portal \
+  --field-selector=status.phase!=Succeeded --timeout=300s
+
+# Delete PostgreSQL cluster
+kubectl delete cluster -n apic $(kubectl get cluster -n apic -l app.kubernetes.io/instance=portal -o name | cut -d'/' -f2)
+
+# Delete Portal PVCs
+kubectl delete pvc -n apic -l app.kubernetes.io/instance=portal
+
+# Delete Portal CR
+kubectl delete portalcluster -n apic portal
+
+# Wait for deletion
+kubectl wait --for=delete portalcluster -n apic portal --timeout=300s
+
+# Re-apply Portal CR
+kubectl apply -f /Volumes/Data/Users/vladimir/git/ibm/demos/ibm-apic-deployment/config-adp/v12.1.0.1-local/07-portal-cr.yaml
+
+# Monitor recovery
+kubectl get portalcluster -n apic -w
+
+# 3.4 RESET ANALYTICS SUBSYSTEM
+# WARNING: This will delete all analytics data
+
+# Scale down Analytics deployments
+kubectl scale deployment -n apic --replicas=0 \
+  $(kubectl get deployment -n apic -l app.kubernetes.io/instance=analytics -o name | cut -d'/' -f2)
+
+# Scale down Analytics StatefulSets
+kubectl scale statefulset -n apic --replicas=0 \
+  $(kubectl get statefulset -n apic -l app.kubernetes.io/instance=analytics -o name | cut -d'/' -f2)
+
+# Wait for Analytics pods to terminate
+kubectl wait --for=delete pod -n apic -l app.kubernetes.io/instance=analytics \
+  --field-selector=status.phase!=Succeeded --timeout=300s
+
+# Delete Analytics PVCs
+kubectl delete pvc -n apic -l app.kubernetes.io/instance=analytics
+
+# Delete Analytics CR
+kubectl delete analyticscluster -n apic analytics
+
+# Wait for deletion
+kubectl wait --for=delete analyticscluster -n apic analytics --timeout=300s
+
+# Re-apply Analytics CR
+kubectl apply -f /Volumes/Data/Users/vladimir/git/ibm/demos/ibm-apic-deployment/config-adp/v12.1.0.1-local/08-analytics-cr.yaml
+
+# Monitor recovery
+kubectl get analyticscluster -n apic -w
+
+================================================================================
+SECTION 4: COMPLETE PURGE/UNINSTALL
+================================================================================
+
+# 4.1 Delete all HTTPProxy resources
+kubectl delete httpproxy -n apic --all
+
+# 4.2 Delete Analytics subsystem
+kubectl delete analyticscluster -n apic analytics
+kubectl wait --for=delete analyticscluster -n apic analytics --timeout=600s
+
+# 4.3 Delete Portal subsystem
+kubectl delete portalcluster -n apic portal
+kubectl wait --for=delete portalcluster -n apic portal --timeout=600s
+
+# 4.4 Delete Gateway subsystem
+kubectl delete gatewaycluster -n apic gwv6
+kubectl wait --for=delete gatewaycluster -n apic gwv6 --timeout=600s
+
+# 4.5 Delete Management subsystem
+kubectl delete managementcluster -n apic management
+kubectl wait --for=delete managementcluster -n apic management --timeout=600s
+
+# 4.6 Delete PostgreSQL clusters (if still exist)
+kubectl delete cluster -n apic --all
+
+# 4.7 Delete all PVCs
+kubectl delete pvc -n apic --all
+
+# 4.8 Delete operator
+kubectl delete -f /Volumes/Data/Users/vladimir/git/ibm/demos/ibm-apic-deployment/config-adp/v12.1.0.1-local/01-operator.yaml
+
+# 4.9 Delete cert-manager issuers
+kubectl delete -f /Volumes/Data/Users/vladimir/git/ibm/demos/ibm-apic-deployment/config-adp/v12.1.0.1-local/00-cert-manager-issuer.yaml
+
+# 4.10 Delete Contour
+kubectl delete -f https://projectcontour.io/quickstart/v1.33.1/contour.yaml
+
+# 4.11 Delete namespace (this will delete everything in apic namespace)
+kubectl delete namespace apic
+
+# 4.12 Optional: Uninstall cert-manager (if not used by other apps)
+kubectl delete -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.2/cert-manager.yaml
+
+# 4.13 Clean up NFS storage (if needed - requires SSH access)
+# ssh nas.local
+# cd /talos-nfs
+# ls -la | grep apic
+# rm -rf <pvc-directories>
+# exit
+
+================================================================================
+SECTION 5: TROUBLESHOOTING COMMANDS
+================================================================================
+
+# 5.1 Check pod logs
+kubectl logs -n apic <pod-name>
+kubectl logs -n apic <pod-name> -c <container-name>
+kubectl logs -n apic <pod-name> --previous  # Previous pod instance
+
+# 5.2 Describe pod for events
+kubectl describe pod -n apic <pod-name>
+
+# 5.3 Check PostgreSQL cluster status
+kubectl get cluster -n apic
+kubectl describe cluster -n apic <cluster-name>
+
+# 5.4 Check PostgreSQL pod logs
+kubectl logs -n apic <postgresql-pod-name>
+
+# 5.5 Check schema upgrade jobs
+kubectl get jobs -n apic | grep "up-"
+kubectl logs -n apic job/<job-name>
+
+# 5.6 Check Contour proxy status
+kubectl get httpproxy -n apic
+kubectl describe httpproxy -n apic <httpproxy-name>
+
+# 5.7 Check Contour envoy logs
+kubectl logs -n projectcontour daemonset/envoy
+
+# 5.8 Check Contour controller logs
+kubectl logs -n projectcontour deployment/contour
+
+# 5.9 Exec into pod for debugging
+kubectl exec -it -n apic <pod-name> -- /bin/bash
+
+# 5.10 Check resource usage
+kubectl top nodes
+kubectl top pods -n apic
+
+# 5.11 Check PVC status
+kubectl get pvc -n apic
+kubectl describe pvc -n apic <pvc-name>
+
+# 5.12 Check ingress resources
+kubectl get ingress -n apic
+kubectl describe ingress -n apic <ingress-name>
+
+# 5.13 Check secrets
+kubectl get secrets -n apic
+kubectl describe secret -n apic <secret-name>
+
+# 5.14 Get admin password
+kubectl get secret -n apic management-admin-secret -o jsonpath='{.data.password}' | base64 -d && echo
+
+# 5.15 Check subsystem conditions
+kubectl get managementcluster -n apic -o jsonpath='{.items[0].status.conditions}' | jq
+kubectl get gatewaycluster -n apic -o jsonpath='{.items[0].status.conditions}' | jq
+kubectl get portalcluster -n apic -o jsonpath='{.items[0].status.conditions}' | jq
+kubectl get analyticscluster -n apic -o jsonpath='{.items[0].status.conditions}' | jq
+
+# 5.16 Restart a deployment
+kubectl rollout restart deployment -n apic <deployment-name>
+
+# 5.17 Scale deployment
+kubectl scale deployment -n apic <deployment-name> --replicas=<number>
+
+# 5.18 Check events
+kubectl get events -n apic --sort-by='.lastTimestamp'
+
+# 5.19 Check Contour LoadBalancer
+kubectl get svc -n projectcontour envoy
+kubectl describe svc -n projectcontour envoy
+
+# 5.20 Test DNS resolution
+kubectl run -it --rm debug-dns --image=busybox --restart=Never -- nslookup admin.apic.talos-pc.zebra-cloud.net
+
+================================================================================
+SECTION 6: ENDPOINT URLS
+================================================================================
+
+Cloud Manager (Management):
+  https://admin.apic.talos-pc.zebra-cloud.net/admin
+  Username: admin
+  Initial Password: Admin123! (change on first login)
+
+API Manager:
+  https://manager.apic.talos-pc.zebra-cloud.net/manager
+
+Platform API:
+  https://api.apic.talos-pc.zebra-cloud.net
+
+Consumer API:
+  https://consumer.apic.talos-pc.zebra-cloud.net
+
+Consumer Catalog:
+  https://consumer-catalog.apic.talos-pc.zebra-cloud.net
+
+Gateway:
+  https://rgw.apic.talos-pc.zebra-cloud.net
+
+Gateway Manager:
+  https://rgwd.apic.talos-pc.zebra-cloud.net
+
+Portal Admin:
+  https://api.portal.apic.talos-pc.zebra-cloud.net
+
+Portal Web:
+  https://portal.apic.talos-pc.zebra-cloud.net
+
+Analytics Ingestion:
+  https://ai.apic.talos-pc.zebra-cloud.net
+
+Contour LoadBalancer IP:
+  10.20.221.222
+
+DNS Wildcard:
+  *.talos-pc.zebra-cloud.net -> 10.20.221.222
+
+================================================================================
+SECTION 7: COMMON MAINTENANCE TASKS
+================================================================================
+
+# 7.1 Backup Management database
+kubectl exec -n apic management-99543590-db-1 -- \
+  pg_dump -U postgres -d apim > apim-backup-$(date +%Y%m%d).sql
+
+# 7.2 Check disk usage in pods
+kubectl exec -n apic <pod-name> -- df -h
+
+# 7.3 Restart all Management pods
+kubectl rollout restart deployment -n apic \
+  management-apim \
+  management-lur \
+  management-ui \
+  management-analytics-ui \
+  management-analytics-proxy \
+  management-portal-proxy \
+  management-websocket-proxy \
+  management-api-studio \
+  management-audit-logging \
+  management-client-downloads-server \
+  management-consumer-catalog \
+  management-juhu \
+  management-ldap \
+  management-taskmanager
+
+# 7.4 Restart Gateway
+kubectl rollout restart statefulset -n apic gwv6
+
+# 7.5 Check certificate expiration
+kubectl get certificates -n apic
+kubectl describe certificate -n apic <cert-name>
+
+# 7.6 Force certificate renewal
+kubectl delete secret -n apic <tls-secret-name>
+# cert-manager will automatically recreate it
+
+# 7.7 Patch service account with imagePullSecrets
+kubectl patch sa <service-account-name> -n apic \
+  -p '{"imagePullSecrets": [{"name": "harbor-registry-secret"}]}'
+
+# 7.8 Update all service accounts with imagePullSecrets
+for sa in $(kubectl get sa -n apic -o name | cut -d'/' -f2); do
+  kubectl patch sa "$sa" -n apic \
+    -p '{"imagePullSecrets": [{"name": "harbor-registry-secret"}]}'
+done
+
+# 7.9 Check image pull errors
+kubectl get events -n apic | grep -i "pull\|image"
+
+# 7.10 Manually trigger schema upgrade (if stuck)
+kubectl delete job -n apic $(kubectl get jobs -n apic -o name | grep "up-")
+
+================================================================================
+SECTION 8: UPGRADE PROCEDURES
+================================================================================
+
+# 8.1 Upgrade Management subsystem
+# Edit the Management CR file and change version
+# Then apply:
+kubectl apply -f /Volumes/Data/Users/vladimir/git/ibm/demos/ibm-apic-deployment/config-adp/v12.1.0.1-local/05-management-cr.yaml
+
+# Monitor upgrade
+kubectl get managementcluster -n apic -w
+kubectl get jobs -n apic | grep "up-"
+
+# 8.2 Upgrade Gateway subsystem
+kubectl apply -f /Volumes/Data/Users/vladimir/git/ibm/demos/ibm-apic-deployment/config-adp/v12.1.0.1-local/06-apigateway-cr.yaml
+kubectl get gatewaycluster -n apic -w
+
+# 8.3 Upgrade Portal subsystem
+kubectl apply -f /Volumes/Data/Users/vladimir/git/ibm/demos/ibm-apic-deployment/config-adp/v12.1.0.1-local/07-portal-cr.yaml
+kubectl get portalcluster -n apic -w
+
+# 8.4 Upgrade Analytics subsystem
+kubectl apply -f /Volumes/Data/Users/vladimir/git/ibm/demos/ibm-apic-deployment/config-adp/v12.1.0.1-local/08-analytics-cr.yaml
+kubectl get analyticscluster -n apic -w
+
+# 8.5 Upgrade Operator
+kubectl apply -f /Volumes/Data/Users/vladimir/git/ibm/demos/ibm-apic-deployment/config-adp/v12.1.0.1-local/01-operator.yaml
+
+# 8.6 Upgrade Contour
+kubectl apply -f https://projectcontour.io/quickstart/v1.33.1/contour.yaml
+
+================================================================================
+END OF DEPLOYMENT COMMANDS REFERENCE
+================================================================================

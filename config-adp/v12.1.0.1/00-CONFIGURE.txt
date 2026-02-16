@@ -1,0 +1,388 @@
+================================================================================
+IBM API CONNECT v12.1.0.1 - CONFIGURATION REPLACEMENT COMMANDS
+================================================================================
+
+This file contains one-liner commands to customize the deployment configuration
+for your specific Kubernetes cluster environment.
+
+IMPORTANT: Run these commands from the directory containing the YAML files:
+  cd /path/to/config-adp/v12.1.0.1/
+
+================================================================================
+STEP 1: DEFINE YOUR ENVIRONMENT VARIABLES
+================================================================================
+
+Set these variables according to your environment:
+
+export NAMESPACE="apic"
+export DNS_DOMAIN="adp.example.com"
+export INGRESS_CLASS="contour"
+export STORAGE_CLASS="nfs-ssd"
+export REGISTRY="registry.example.com/apic"
+export REGISTRY_SECRET="harbor-registry-secret"
+
+Example for different environments:
+
+# Example 1: OpenShift with OCS storage
+export NAMESPACE="apiconnect"
+export DNS_DOMAIN="api.mycompany.com"
+export INGRESS_CLASS="openshift-default"
+export STORAGE_CLASS="ocs-storagecluster-ceph-rbd"
+export REGISTRY="image-registry.openshift-image-registry.svc:5000/apiconnect"
+export REGISTRY_SECRET="registry-secret"
+
+# Example 2: Kubernetes with NFS and Contour
+export NAMESPACE="apic"
+export DNS_DOMAIN="apic.prod.example.com"
+export INGRESS_CLASS="contour"
+export STORAGE_CLASS="nfs-client"
+export REGISTRY="harbor.internal.example.com/apic"
+export REGISTRY_SECRET="harbor-pull-secret"
+
+# Example 3: Kubernetes with local-path storage (for testing)
+export NAMESPACE="apic-dev"
+export DNS_DOMAIN="apic.dev.local"
+export INGRESS_CLASS="nginx"
+export STORAGE_CLASS="local-path"
+export REGISTRY="localhost:5000/apic"
+export REGISTRY_SECRET="local-registry"
+
+================================================================================
+STEP 2: REPLACE NAMESPACE PLACEHOLDER
+================================================================================
+
+# Replace namespace in ALL YAML files (including cert-manager and busybox)
+find . -type f -name "*.yaml" -exec sed -i.bak "s/NAMESPACE_PLACEHOLDER/$NAMESPACE/g" {} \;
+
+# Verify the replacement
+grep -r "namespace:" *.yaml busybox/*.yaml | grep -v ".bak" | head -5
+
+================================================================================
+STEP 3: REPLACE DNS DOMAIN PLACEHOLDER
+================================================================================
+
+# Replace DNS domain in ALL YAML files
+find . -type f -name "*.yaml" -exec sed -i.bak "s/DNS_PLACEHOLDER/$DNS_DOMAIN/g" {} \;
+
+# Verify the replacement
+grep -r "\.DNS_PLACEHOLDER" *.yaml | grep -v ".bak"
+
+# If above command returns results, DNS_PLACEHOLDER was not replaced
+# If it returns nothing, replacement was successful
+
+================================================================================
+STEP 4: REPLACE INGRESS CLASS PLACEHOLDER
+================================================================================
+
+# Replace ingress class in ALL YAML files
+find . -type f -name "*.yaml" -exec sed -i.bak "s/INGRESS_CLASS_PLACEHOLDER/$INGRESS_CLASS/g" {} \;
+
+# Verify the replacement
+grep -r "ingressClassName:" *.yaml | grep -v ".bak"
+
+================================================================================
+STEP 5: REPLACE STORAGE CLASS PLACEHOLDER
+================================================================================
+
+# Replace storage class in ALL YAML files
+find . -type f -name "*.yaml" -exec sed -i.bak "s/STORAGE_CLASS_PLACEHOLDER/$STORAGE_CLASS/g" {} \;
+
+# Verify the replacement
+grep -r "storageClassName:" *.yaml | grep -v ".bak"
+
+================================================================================
+STEP 6: REPLACE REGISTRY PLACEHOLDER
+================================================================================
+
+# Replace container registry in ALL YAML files (including cert-manager and busybox)
+find . -type f -name "*.yaml" -exec sed -i.bak "s|REGISTRY_PLACEHOLDER|$REGISTRY|g" {} \;
+
+# Verify the replacement
+grep -r "imageRegistry:" *.yaml | grep -v ".bak"
+grep -r "image:" *.yaml busybox/*.yaml cert-manager/*.yaml | grep -v ".bak" | grep -v "#" | head -10
+
+# NOTE: cert-manager images will be updated from "REGISTRY_PLACEHOLDER/cert-manager-*"
+#       to "$REGISTRY/cert-manager-*" (e.g., "harbor.example.com/apic/cert-manager-controller:v1.13.2")
+
+================================================================================
+STEP 7: REPLACE REGISTRY SECRET PLACEHOLDER
+================================================================================
+
+# Replace registry secret in ALL YAML files
+find . -type f -name "*.yaml" -exec sed -i.bak "s/REGISTRY_SECRET_PLACEHOLDER/$REGISTRY_SECRET/g" {} \;
+
+# Verify the replacement
+grep -r "imagePullSecrets:" -A1 *.yaml | grep -v ".bak" | grep "name:"
+
+================================================================================
+STEP 8: UPDATE MARKDOWN/README FILES
+================================================================================
+
+# Replace placeholders in markdown files
+find . -type f -name "*.md" -exec sed -i.bak "s/NAMESPACE_PLACEHOLDER/$NAMESPACE/g" {} \;
+find . -type f -name "*.md" -exec sed -i.bak "s/DNS_PLACEHOLDER/$DNS_DOMAIN/g" {} \;
+find . -type f -name "*.md" -exec sed -i.bak "s|REGISTRY_PLACEHOLDER|$REGISTRY|g" {} \;
+find . -type f -name "*.md" -exec sed -i.bak "s/REGISTRY_SECRET_PLACEHOLDER/$REGISTRY_SECRET/g" {} \;
+
+================================================================================
+STEP 9: CLEAN UP BACKUP FILES
+================================================================================
+
+# Remove all .bak files created by sed
+find . -type f -name "*.bak" -delete
+
+# Verify cleanup
+find . -type f -name "*.bak"
+
+# If above returns nothing, cleanup was successful
+
+================================================================================
+STEP 10: VERIFICATION COMMANDS
+================================================================================
+
+# Verify all placeholders are replaced
+echo "Checking for remaining placeholders..."
+grep -r "PLACEHOLDER" . --include="*.yaml" --include="*.md"
+
+# If above command returns results, you have unreplaced placeholders
+# If it returns nothing, all replacements are complete
+
+# Check specific configurations
+echo "=== Namespace Configuration ==="
+grep "namespace:" *.yaml | grep -v ".bak" | head -3
+
+echo "=== DNS Configuration ==="
+grep "fqdn:" *.yaml | grep -v ".bak" | head -5
+
+echo "=== Ingress Class Configuration ==="
+grep "ingressClassName:" *.yaml | grep -v ".bak" | head -3
+
+echo "=== Storage Class Configuration ==="
+grep "storageClassName:" *.yaml | grep -v ".bak" | head -3
+
+echo "=== Registry Configuration ==="
+grep "imageRegistry:" *.yaml | grep -v ".bak" | head -3
+
+================================================================================
+STEP 11: ALL-IN-ONE REPLACEMENT (Alternative to Steps 2-8)
+================================================================================
+
+# If you prefer to run all replacements at once, use this command block:
+# This will update ALL files including cert-manager and busybox
+
+find . -type f \( -name "*.yaml" -o -name "*.md" \) \
+  -exec sed -i.bak \
+    -e "s/NAMESPACE_PLACEHOLDER/$NAMESPACE/g" \
+    -e "s/DNS_PLACEHOLDER/$DNS_DOMAIN/g" \
+    -e "s/INGRESS_CLASS_PLACEHOLDER/$INGRESS_CLASS/g" \
+    -e "s/STORAGE_CLASS_PLACEHOLDER/$STORAGE_CLASS/g" \
+    -e "s|REGISTRY_PLACEHOLDER|$REGISTRY|g" \
+    -e "s/REGISTRY_SECRET_PLACEHOLDER/$REGISTRY_SECRET/g" \
+  {} \;
+
+# Clean up backup files
+find . -type f -name "*.bak" -delete
+
+# Verify
+grep -r "PLACEHOLDER" . --include="*.yaml" --include="*.md"
+
+# IMPORTANT: This replaces placeholders in:
+#   - API Connect CRs (05-08)
+#   - HTTPProxy resources (10-13)
+#   - cert-manager manifest (cert-manager/cert-manager-v1.13.2.yaml)
+#   - Busybox pod (busybox/clear-pvc-pod.yaml)
+#   - All documentation files
+
+================================================================================
+MACOS vs LINUX DIFFERENCES
+================================================================================
+
+The sed commands above work differently on macOS and Linux:
+
+# macOS (BSD sed) - requires backup extension
+sed -i.bak "s/OLD/NEW/g" file.yaml
+
+# Linux (GNU sed) - backup extension optional
+sed -i "s/OLD/NEW/g" file.yaml
+# OR with backup:
+sed -i.bak "s/OLD/NEW/g" file.yaml
+
+If you're on Linux and want to avoid creating backup files:
+
+# Linux version without backups (STEP 13 alternative)
+find . -type f \( -name "*.yaml" -o -name "*.md" \) \
+  -exec sed -i \
+    -e "s/NAMESPACE_PLACEHOLDER/$NAMESPACE/g" \
+    -e "s/DNS_PLACEHOLDER/$DNS_DOMAIN/g" \
+    -e "s/INGRESS_CLASS_PLACEHOLDER/$INGRESS_CLASS/g" \
+    -e "s/STORAGE_CLASS_PLACEHOLDER/$STORAGE_CLASS/g" \
+    -e "s|REGISTRY_PLACEHOLDER|$REGISTRY|g" \
+    -e "s/REGISTRY_SECRET_PLACEHOLDER/$REGISTRY_SECRET/g" \
+  {} \;
+
+================================================================================
+EXAMPLE: COMPLETE CONFIGURATION WORKFLOW
+================================================================================
+
+# 1. Navigate to configuration directory
+cd /path/to/config-adp/v12.1.0.1/
+
+# 2. Set environment variables
+export NAMESPACE="apic"
+export DNS_DOMAIN="adp.example.com"
+export INGRESS_CLASS="contour"
+export STORAGE_CLASS="nfs-ssd"
+export REGISTRY="harbor.example.com/apic"
+export REGISTRY_SECRET="harbor-registry-secret"
+
+# 3. Run all-in-one replacement
+find . -type f \( -name "*.yaml" -o -name "*.md" \) \
+  -exec sed -i.bak \
+    -e "s/NAMESPACE_PLACEHOLDER/$NAMESPACE/g" \
+    -e "s/DNS_PLACEHOLDER/$DNS_DOMAIN/g" \
+    -e "s/INGRESS_CLASS_PLACEHOLDER/$INGRESS_CLASS/g" \
+    -e "s/STORAGE_CLASS_PLACEHOLDER/$STORAGE_CLASS/g" \
+    -e "s|REGISTRY_PLACEHOLDER|$REGISTRY|g" \
+    -e "s/REGISTRY_SECRET_PLACEHOLDER/$REGISTRY_SECRET/g" \
+  {} \;
+
+# 4. Verify replacements
+grep -r "PLACEHOLDER" . --include="*.yaml" --include="*.md"
+
+# 5. Clean up backups
+find . -type f -name "*.bak" -delete
+
+# 6. Review the configured files
+cat 05-management-cr.yaml
+cat 10-httpproxy-management.yaml
+
+# 7. Configuration complete! Now proceed with deployment
+# See README.md for deployment instructions
+
+================================================================================
+DYNAMIC PLACEHOLDERS (NOT PART OF INITIAL CONFIGURATION!)
+================================================================================
+
+IMPORTANT: The following placeholders are called "dynamic" because their values
+are generated by Kubernetes/operators at DEPLOYMENT TIME, not before.
+
+DO NOT try to replace these during initial configuration!
+These are handled DURING or AFTER deployment.
+
+--------------------------------------------------------------------------------
+1. PORTAL_WWW_SERVICE_PLACEHOLDER
+--------------------------------------------------------------------------------
+
+WHERE: 12-httpproxy-portal.yaml
+WHEN TO UPDATE: After Portal subsystem is deployed
+WHY DYNAMIC: Portal operator generates a unique service name (e.g., portal-abc12345-www)
+
+HOW TO UPDATE:
+
+# Step 1: Deploy Portal subsystem (from DEPLOYMENT-GUIDE.txt)
+kubectl apply -f 07-portal-cr.yaml
+
+# Step 2: Wait for Portal to be ready
+kubectl get portalcluster -n $NAMESPACE -w
+
+# Step 3: Get the dynamically generated www service name
+export PORTAL_WWW_SERVICE=$(kubectl get service -n $NAMESPACE | grep www | awk '{print $1}')
+echo "Portal www service: $PORTAL_WWW_SERVICE"
+
+# Example output: portal-8f3cbe34-www
+
+# Step 4: Update the HTTPProxy file
+sed -i.bak "s/PORTAL_WWW_SERVICE_PLACEHOLDER/$PORTAL_WWW_SERVICE/g" 12-httpproxy-portal.yaml
+
+# Step 5: Apply the updated HTTPProxy
+kubectl apply -f 12-httpproxy-portal.yaml
+
+# Step 6: Verify HTTPProxy is valid
+kubectl get httpproxy -n $NAMESPACE portal-portal-web
+
+NOTE: This is documented in DEPLOYMENT-GUIDE.txt Step 9.5-9.6
+
+--------------------------------------------------------------------------------
+2. PVC_DATA_PLACEHOLDER and PVC_WAL_PLACEHOLDER
+--------------------------------------------------------------------------------
+
+WHERE: busybox/clear-pvc-pod.yaml
+WHEN TO UPDATE: Only when you need to reset a database (maintenance operation)
+WHY DYNAMIC: PVC names include PostgreSQL cluster ID (e.g., management-99543590-db-1)
+
+HOW TO UPDATE:
+
+# Step 1: Identify the PVCs you need to clear
+kubectl get pvc -n $NAMESPACE | grep management
+
+# Example output:
+# management-99543590-db-1        Bound    50Gi
+# management-99543590-db-1-wal    Bound    2Gi
+
+# Step 2: Set the variables with your actual PVC names
+export PVC_DATA="management-99543590-db-1"
+export PVC_WAL="management-99543590-db-1-wal"
+
+# Step 3: Update the busybox pod manifest
+cd busybox
+sed -i.bak "s/PVC_DATA_PLACEHOLDER/$PVC_DATA/g" clear-pvc-pod.yaml
+sed -i.bak "s/PVC_WAL_PLACEHOLDER/$PVC_WAL/g" clear-pvc-pod.yaml
+cd ..
+
+# Step 4: Deploy busybox pod
+kubectl apply -f busybox/clear-pvc-pod.yaml
+
+NOTE: This is documented in busybox/README.md and is ONLY needed for
+      database reset operations, not for initial deployment.
+
+--------------------------------------------------------------------------------
+SUMMARY: When to Handle Dynamic Placeholders
+--------------------------------------------------------------------------------
+
+INITIAL CONFIGURATION (Steps 1-11 above):
+  ✓ NAMESPACE_PLACEHOLDER
+  ✓ DNS_PLACEHOLDER
+  ✓ INGRESS_CLASS_PLACEHOLDER
+  ✓ STORAGE_CLASS_PLACEHOLDER
+  ✓ REGISTRY_PLACEHOLDER
+  ✓ REGISTRY_SECRET_PLACEHOLDER
+
+DURING DEPLOYMENT (in DEPLOYMENT-GUIDE.txt):
+  → PORTAL_WWW_SERVICE_PLACEHOLDER (after Portal deploys)
+
+MAINTENANCE ONLY (when resetting databases):
+  → PVC_DATA_PLACEHOLDER (when using busybox)
+  → PVC_WAL_PLACEHOLDER (when using busybox)
+
+================================================================================
+ADDITIONAL NOTES
+================================================================================
+
+1. Dynamic Placeholders Explained:
+   - These values don't exist until Kubernetes creates them
+   - You cannot know them in advance
+   - They are handled automatically by following the deployment guide
+
+2. Registry Configuration:
+   - Ensure your container registry is accessible from the cluster
+   - All API Connect images must be pushed to the registry first
+   - Test registry access: docker pull $REGISTRY/ibm-apiconnect:12.1.0.1
+
+3. Storage Class:
+   - Verify storage class exists: kubectl get storageclass
+   - Ensure storage class supports ReadWriteMany (RWX) for some components
+   - Test PVC creation with your storage class before deployment
+
+4. Ingress Class:
+   - Verify ingress class exists: kubectl get ingressclass
+   - For Contour: Must be configured with TLS passthrough enabled
+   - For NGINX: Must support backend protocol annotations
+
+5. DNS Configuration:
+   - Create wildcard DNS: *.$DNS_DOMAIN -> LoadBalancer IP
+   - Verify DNS: nslookup admin.$DNS_DOMAIN
+   - Get LoadBalancer IP: kubectl get svc -n projectcontour envoy
+
+================================================================================
+END OF CONFIGURATION COMMANDS
+================================================================================

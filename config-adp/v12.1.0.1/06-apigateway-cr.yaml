@@ -2,26 +2,27 @@ apiVersion: gateway.apiconnect.ibm.com/v1beta1
 kind: GatewayCluster
 metadata:
   name: gwv6
+  namespace: NAMESPACE_PLACEHOLDER
 spec:
   version: 12.1.0.1
   profile: n1xc4.m8
   imagePullSecrets:
-  - harbor-registry-secret
-  imageRegistry: harbor.talos.zebra-cloud.net/apic
+  - REGISTRY_SECRET_PLACEHOLDER
+  imageRegistry: REGISTRY_PLACEHOLDER
   apicGatewayServiceV5CompatibilityMode: false
   gatewayEndpoint:
-    ingressClassName: traefik
+    ingressClassName: INGRESS_CLASS_PLACEHOLDER
     annotations:
       cert-manager.io/issuer: ingress-issuer
     hosts:
-    - name: rgw.apic.talos.zebra-cloud.net
+    - name: rgw.DNS_PLACEHOLDER
       secretName: gwv6-endpoint
   gatewayManagerEndpoint:
-    ingressClassName: traefik
+    ingressClassName: INGRESS_CLASS_PLACEHOLDER
     annotations:
       cert-manager.io/issuer: ingress-issuer
     hosts:
-    - name: rgwd.apic.talos.zebra-cloud.net
+    - name: rgwd.DNS_PLACEHOLDER
       secretName: gwv6-manager-endpoint
   apicGatewayServiceTLS:
     secretName: gateway-service
@@ -37,7 +38,7 @@ spec:
   tokenManagementService:
     enabled: true
     storage:
-      storageClassName: nfs-ssd
+      storageClassName: STORAGE_CLASS_PLACEHOLDER
       volumeSize: 30Gi
   adminUser:
     secretName: datapower-admin-credentials

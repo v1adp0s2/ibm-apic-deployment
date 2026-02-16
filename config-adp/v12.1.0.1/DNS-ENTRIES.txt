@@ -1,0 +1,307 @@
+================================================================================
+IBM API CONNECT v12.1.0.1 - REQUIRED DNS ENTRIES
+================================================================================
+
+This file lists ALL DNS entries required for IBM API Connect v12.1.0.1 deployment.
+
+IMPORTANT: If you cannot use wildcard DNS (*.adp.example.com), you must create
+individual DNS A records for each hostname listed below.
+
+================================================================================
+TOTAL DNS ENTRIES REQUIRED: 10
+================================================================================
+
+All DNS entries should point to the Contour LoadBalancer IP address.
+
+To find your LoadBalancer IP:
+```
+kubectl get svc -n projectcontour envoy
+```
+
+================================================================================
+DNS ENTRIES BY SUBSYSTEM
+================================================================================
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ MANAGEMENT SUBSYSTEM (5 DNS entries)                                        │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+1. admin.DNS_PLACEHOLDER
+   Purpose:    Cloud Manager UI (admin console)
+   Used by:    Administrators
+   Example:    admin.adp.example.com
+   File:       05-management-cr.yaml, 10-httpproxy-management.yaml
+
+2. manager.DNS_PLACEHOLDER
+   Purpose:    API Manager UI (provider organization management)
+   Used by:    API developers, product managers
+   Example:    manager.adp.example.com
+   File:       05-management-cr.yaml, 10-httpproxy-management.yaml
+
+3. api.DNS_PLACEHOLDER
+   Purpose:    Platform API endpoint
+   Used by:    API Connect CLI (apic), automation scripts
+   Example:    api.adp.example.com
+   File:       05-management-cr.yaml, 10-httpproxy-management.yaml
+
+4. consumer.DNS_PLACEHOLDER
+   Purpose:    Consumer API (for custom developer portals)
+   Used by:    Custom portal implementations
+   Example:    consumer.adp.example.com
+   File:       05-management-cr.yaml, 10-httpproxy-management.yaml
+
+5. consumer-catalog.DNS_PLACEHOLDER
+   Purpose:    Consumer catalog API (catalog-specific operations)
+   Used by:    Custom portal implementations, catalog operations
+   Example:    consumer-catalog.adp.example.com
+   File:       05-management-cr.yaml, 10-httpproxy-management.yaml
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ GATEWAY SUBSYSTEM (2 DNS entries)                                           │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+6. rgw.DNS_PLACEHOLDER
+   Purpose:    API Gateway runtime endpoint (API invocations)
+   Used by:    API consumers, applications calling APIs
+   Example:    rgw.adp.example.com
+   File:       11-httpproxy-gateway.yaml
+
+7. rgwd.DNS_PLACEHOLDER
+   Purpose:    Gateway director endpoint (gateway management)
+   Used by:    Management subsystem to configure gateway
+   Example:    rgwd.adp.example.com
+   File:       11-httpproxy-gateway.yaml
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ PORTAL SUBSYSTEM (2 DNS entries)                                            │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+8. api.portal.DNS_PLACEHOLDER
+   Purpose:    Portal admin API endpoint
+   Used by:    Portal administrators, portal configuration
+   Example:    api.portal.adp.example.com
+   File:       07-portal-cr.yaml, 12-httpproxy-portal.yaml
+
+9. portal.DNS_PLACEHOLDER
+   Purpose:    Developer portal website (public-facing)
+   Used by:    API consumers, developers browsing/subscribing to APIs
+   Example:    portal.adp.example.com
+   File:       07-portal-cr.yaml, 12-httpproxy-portal.yaml
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ ANALYTICS SUBSYSTEM (1 DNS entry)                                           │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+10. ai.DNS_PLACEHOLDER
+    Purpose:    Analytics ingestion endpoint (metrics/logs)
+    Used by:    Gateway sends analytics data, management retrieves reports
+    Example:    ai.adp.example.com
+    File:       08-analytics-cr.yaml, 13-httpproxy-analytics.yaml
+
+================================================================================
+WILDCARD vs INDIVIDUAL DNS ENTRIES
+================================================================================
+
+OPTION 1: WILDCARD DNS (Recommended)
+-------------------------------------
+Create a single wildcard DNS record:
+
+*.adp.example.com  →  <LOADBALANCER_IP>
+
+This covers all 10 hostnames automatically.
+
+Example:
+*.adp.example.com  →  192.168.1.100
+
+OPTION 2: INDIVIDUAL DNS ENTRIES
+---------------------------------
+Create 10 individual DNS A records:
+
+admin.adp.example.com            →  <LOADBALANCER_IP>
+manager.adp.example.com          →  <LOADBALANCER_IP>
+api.adp.example.com              →  <LOADBALANCER_IP>
+consumer.adp.example.com         →  <LOADBALANCER_IP>
+consumer-catalog.adp.example.com →  <LOADBALANCER_IP>
+rgw.adp.example.com              →  <LOADBALANCER_IP>
+rgwd.adp.example.com             →  <LOADBALANCER_IP>
+api.portal.adp.example.com       →  <LOADBALANCER_IP>
+portal.adp.example.com           →  <LOADBALANCER_IP>
+ai.adp.example.com               →  <LOADBALANCER_IP>
+
+================================================================================
+EXAMPLE CONFIGURATION
+================================================================================
+
+If your domain is: adp.example.com
+And LoadBalancer IP is: 192.168.1.100
+
+Then create these DNS records:
+
+admin.adp.example.com            A    192.168.1.100
+manager.adp.example.com          A    192.168.1.100
+api.adp.example.com              A    192.168.1.100
+consumer.adp.example.com         A    192.168.1.100
+consumer-catalog.adp.example.com A    192.168.1.100
+rgw.adp.example.com              A    192.168.1.100
+rgwd.adp.example.com             A    192.168.1.100
+api.portal.adp.example.com       A    192.168.1.100
+portal.adp.example.com           A    192.168.1.100
+ai.adp.example.com               A    192.168.1.100
+
+OR just one wildcard:
+
+*.adp.example.com                A    192.168.1.100
+
+================================================================================
+VERIFICATION COMMANDS
+================================================================================
+
+After creating DNS records, verify they resolve correctly:
+
+```bash
+# Test each DNS entry
+nslookup admin.adp.example.com
+nslookup manager.adp.example.com
+nslookup api.adp.example.com
+nslookup consumer.adp.example.com
+nslookup consumer-catalog.adp.example.com
+nslookup rgw.adp.example.com
+nslookup rgwd.adp.example.com
+nslookup api.portal.adp.example.com
+nslookup portal.adp.example.com
+nslookup ai.adp.example.com
+
+# Or use dig
+dig admin.adp.example.com
+dig manager.adp.example.com
+# ... etc
+```
+
+All should return the same IP address (your LoadBalancer IP).
+
+================================================================================
+DNS PROPAGATION
+================================================================================
+
+After creating DNS records:
+- Internal DNS: Usually propagates within seconds to minutes
+- Public DNS: Can take up to 24-48 hours (typically 1-2 hours)
+- Use TTL of 300 seconds (5 minutes) for faster updates during deployment
+
+================================================================================
+PORTS REQUIRED
+================================================================================
+
+All DNS entries use HTTPS only:
+- Port 443 (HTTPS)
+
+Port 80 (HTTP) is NOT used. All traffic is HTTPS/TLS.
+
+================================================================================
+TLS CERTIFICATES
+================================================================================
+
+Each DNS entry requires a TLS certificate. The deployment uses cert-manager
+to automatically generate certificates for each hostname.
+
+Certificate generation is automatic - no manual certificate creation needed.
+
+cert-manager will create certificates for all 10 hostnames automatically
+using the ingress-issuer configured in 04-ingress-issuer.yaml.
+
+================================================================================
+NETWORK REQUIREMENTS
+================================================================================
+
+For external access:
+- All 10 DNS entries must be resolvable from client machines
+- Firewall must allow HTTPS (443) traffic to LoadBalancer IP
+- LoadBalancer must be accessible from client networks
+
+For internal (cluster) access:
+- DNS entries can be in internal DNS zone
+- LoadBalancer can be internal (not internet-facing)
+
+================================================================================
+TESTING DNS BEFORE DEPLOYMENT
+================================================================================
+
+Before deploying API Connect, ensure DNS is working:
+
+```bash
+# Get LoadBalancer IP
+export LB_IP=$(kubectl get svc -n projectcontour envoy -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+echo "LoadBalancer IP: $LB_IP"
+
+# Test DNS resolution for all entries
+for host in admin manager api consumer consumer-catalog rgw rgwd portal ai; do
+  resolved=$(nslookup ${host}.adp.example.com | grep Address | tail -1 | awk '{print $2}')
+  if [ "$resolved" = "$LB_IP" ]; then
+    echo "✓ ${host}.adp.example.com → $resolved (CORRECT)"
+  else
+    echo "✗ ${host}.adp.example.com → $resolved (WRONG - expected $LB_IP)"
+  fi
+done
+
+# Test api.portal separately (has subdomain)
+resolved=$(nslookup api.portal.adp.example.com | grep Address | tail -1 | awk '{print $2}')
+if [ "$resolved" = "$LB_IP" ]; then
+  echo "✓ api.portal.adp.example.com → $resolved (CORRECT)"
+else
+  echo "✗ api.portal.adp.example.com → $resolved (WRONG - expected $LB_IP)"
+fi
+```
+
+================================================================================
+ALTERNATIVE: USING /etc/hosts FOR TESTING
+================================================================================
+
+For local testing without DNS server access, you can use /etc/hosts:
+
+```bash
+# Get LoadBalancer IP
+export LB_IP=$(kubectl get svc -n projectcontour envoy -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+
+# Add to /etc/hosts (Linux/macOS)
+sudo tee -a /etc/hosts <<EOF
+$LB_IP admin.adp.example.com
+$LB_IP manager.adp.example.com
+$LB_IP api.adp.example.com
+$LB_IP consumer.adp.example.com
+$LB_IP consumer-catalog.adp.example.com
+$LB_IP rgw.adp.example.com
+$LB_IP rgwd.adp.example.com
+$LB_IP api.portal.adp.example.com
+$LB_IP portal.adp.example.com
+$LB_IP ai.adp.example.com
+EOF
+```
+
+WARNING: /etc/hosts only works for the local machine. Other machines
+will not be able to access the endpoints without proper DNS.
+
+================================================================================
+TROUBLESHOOTING
+================================================================================
+
+DNS not resolving:
+- Check DNS server has been updated
+- Wait for propagation (5 minutes to 24 hours)
+- Check TTL settings
+- Try flushing DNS cache: sudo systemd-resolve --flush-caches (Linux)
+                           sudo dscacheutil -flushcache (macOS)
+
+Wrong IP returned:
+- Check DNS record points to correct LoadBalancer IP
+- Verify LoadBalancer IP hasn't changed: kubectl get svc -n projectcontour envoy
+- Clear local DNS cache
+
+Cannot access endpoints:
+- Verify DNS resolves to correct IP: nslookup admin.adp.example.com
+- Check firewall allows port 443
+- Verify LoadBalancer is running: kubectl get svc -n projectcontour envoy
+- Check certificates are ready: kubectl get certificates -n NAMESPACE_PLACEHOLDER
+
+================================================================================
+END OF DNS ENTRIES DOCUMENTATION
+================================================================================

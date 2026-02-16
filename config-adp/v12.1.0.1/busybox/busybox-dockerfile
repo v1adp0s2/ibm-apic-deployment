@@ -1,0 +1,11 @@
+FROM busybox:1.37
+
+# Add labels
+LABEL maintainer="API Connect Operations"
+LABEL description="Busybox utility for PVC cleanup operations"
+LABEL version="1.37"
+
+# No additional packages needed - busybox has all required utilities
+# The image will be used to run cleanup commands in Kubernetes pods
+
+CMD ["/bin/sh"]

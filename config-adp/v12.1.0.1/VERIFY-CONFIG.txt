@@ -1,0 +1,351 @@
+================================================================================
+CONFIGURATION VERIFICATION COMMANDS
+================================================================================
+
+Run these commands to verify your configuration is correct before deployment.
+
+IMPORTANT: Run these AFTER completing configuration in 00-CONFIGURE.txt
+
+================================================================================
+1. VERIFY PLACEHOLDERS ARE REPLACED
+================================================================================
+
+# Check for any remaining PLACEHOLDER strings in YAML files
+echo "=== Checking for unreplaced placeholders ==="
+grep -r "PLACEHOLDER" . --include="*.yaml" --exclude="*.bak"
+
+# Expected: No output (all placeholders replaced)
+# If you see results, those placeholders need to be replaced manually
+
+================================================================================
+2. VERIFY NAMESPACE CONFIGURATION
+================================================================================
+
+echo "=== Checking namespace configuration ==="
+grep "namespace:" *.yaml | grep -v ".bak" | sort -u
+
+# Verify all namespaces match your desired namespace
+# Example expected output:
+#   05-management-cr.yaml:  namespace: apic
+#   06-apigateway-cr.yaml:  namespace: apic
+#   etc.
+
+================================================================================
+3. VERIFY DNS CONFIGURATION
+================================================================================
+
+echo "=== Checking DNS configuration ==="
+grep -E "fqdn:|name:.*\..*\." *.yaml | grep -v ".bak" | grep -v "subjectName" | sort -u
+
+# Verify all FQDNs use your DNS domain
+# Example expected output:
+#   10-httpproxy-management.yaml:    fqdn: admin.adp.example.com
+#   10-httpproxy-management.yaml:    fqdn: manager.adp.example.com
+#   etc.
+
+# Extract unique domains
+grep -h -E "fqdn:|name:.*\..*\." *.yaml | grep -v ".bak" | \
+  grep -v "subjectName" | sed 's/.*: //' | sort -u
+
+# All domains should end with your DNS_DOMAIN
+
+================================================================================
+4. VERIFY INGRESS CLASS CONFIGURATION
+================================================================================
+
+echo "=== Checking ingress class configuration ==="
+grep "ingressClassName:" *.yaml | grep -v ".bak" | sort -u
+
+# Verify all use your ingress class
+# Example expected output:
+#   05-management-cr.yaml:    ingressClassName: contour
+#   06-apigateway-cr.yaml:    ingressClassName: contour
+#   etc.
+
+================================================================================
+5. VERIFY STORAGE CLASS CONFIGURATION
+================================================================================
+
+echo "=== Checking storage class configuration ==="
+grep "storageClassName:" *.yaml | grep -v ".bak" | sort -u
+
+# Verify all use your storage class
+# Example expected output:
+#   05-management-cr.yaml:    storageClassName: nfs-ssd
+#   06-apigateway-cr.yaml:    storageClassName: nfs-ssd
+#   etc.
+
+================================================================================
+6. VERIFY REGISTRY CONFIGURATION
+================================================================================
+
+echo "=== Checking container registry configuration ==="
+grep "imageRegistry:" *.yaml | grep -v ".bak" | sort -u
+
+# Verify all use your registry
+# Example expected output:
+#   05-management-cr.yaml:  imageRegistry: harbor.example.com/apic
+#   06-apigateway-cr.yaml:  imageRegistry: harbor.example.com/apic
+#   etc.
+
+echo "=== Checking busybox image configuration ==="
+grep "image:" busybox/*.yaml | grep -v ".bak"
+
+# Should show your registry path for busybox image
+
+================================================================================
+7. VERIFY REGISTRY SECRET CONFIGURATION
+================================================================================
+
+echo "=== Checking registry secret configuration ==="
+grep -A1 "imagePullSecrets:" *.yaml busybox/*.yaml | grep "name:" | \
+  grep -v ".bak" | sort -u
+
+# Verify all use your registry secret name
+# Example expected output:
+#   - name: harbor-registry-secret
+
+================================================================================
+8. CHECK KUBERNETES CLUSTER ACCESS
+================================================================================
+
+echo "=== Verifying kubectl access ==="
+kubectl cluster-info
+
+echo "=== Checking nodes ==="
+kubectl get nodes
+
+echo "=== Checking cert-manager ==="
+kubectl get pods -n cert-manager
+
+echo "=== Checking Contour ==="
+kubectl get pods -n projectcontour
+
+echo "=== Checking Contour LoadBalancer ==="
+kubectl get svc -n projectcontour envoy
+
+# Should show EXTERNAL-IP assigned
+
+================================================================================
+9. VERIFY STORAGE CLASS EXISTS
+================================================================================
+
+echo "=== Checking available storage classes ==="
+kubectl get storageclass
+
+# Verify your configured storage class appears in the list
+# Example:
+# If you set STORAGE_CLASS="nfs-ssd", verify "nfs-ssd" exists
+
+# Get storage class name from config
+CONFIGURED_SC=$(grep "storageClassName:" 05-management-cr.yaml | \
+  head -1 | awk '{print $2}')
+echo "Configured storage class: $CONFIGURED_SC"
+
+# Check if it exists
+kubectl get storageclass $CONFIGURED_SC 2>/dev/null && \
+  echo "✓ Storage class exists" || \
+  echo "✗ ERROR: Storage class does not exist!"
+
+================================================================================
+10. VERIFY INGRESS CLASS EXISTS
+================================================================================
+
+echo "=== Checking available ingress classes ==="
+kubectl get ingressclass
+
+# Verify your configured ingress class appears in the list
+# Example:
+# If you set INGRESS_CLASS="contour", verify "contour" exists
+
+# Get ingress class name from config
+CONFIGURED_IC=$(grep "ingressClassName:" 05-management-cr.yaml | \
+  head -1 | awk '{print $2}')
+echo "Configured ingress class: $CONFIGURED_IC"
+
+# Check if it exists
+kubectl get ingressclass $CONFIGURED_IC 2>/dev/null && \
+  echo "✓ Ingress class exists" || \
+  echo "✗ ERROR: Ingress class does not exist!"
+
+================================================================================
+11. TEST DNS RESOLUTION
+================================================================================
+
+# Get configured DNS domain
+CONFIGURED_DNS=$(grep "fqdn:" 10-httpproxy-management.yaml | \
+  head -1 | awk '{print $2}' | cut -d'.' -f2-)
+echo "Configured DNS domain: $CONFIGURED_DNS"
+
+# Get Contour LoadBalancer IP
+LB_IP=$(kubectl get svc -n projectcontour envoy \
+  -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+echo "LoadBalancer IP: $LB_IP"
+
+# Test DNS resolution
+echo "=== Testing DNS resolution ==="
+echo "Testing: admin.$CONFIGURED_DNS"
+nslookup admin.$CONFIGURED_DNS 2>/dev/null || \
+  echo "WARNING: DNS not yet configured or not propagated"
+
+# Manual test
+echo ""
+echo "Expected: admin.$CONFIGURED_DNS should resolve to $LB_IP"
+echo "If DNS is not configured yet, configure it now:"
+echo "  Wildcard DNS: *.$CONFIGURED_DNS → $LB_IP"
+
+================================================================================
+12. TEST REGISTRY ACCESS
+================================================================================
+
+# Get configured registry
+CONFIGURED_REGISTRY=$(grep "imageRegistry:" 05-management-cr.yaml | \
+  head -1 | awk '{print $2}')
+echo "Configured registry: $CONFIGURED_REGISTRY"
+
+echo ""
+echo "=== Testing registry access ==="
+echo "Try to pull a test image from your registry:"
+echo "  docker pull $CONFIGURED_REGISTRY/ibm-apiconnect:<tag>"
+echo ""
+echo "If pull fails:"
+echo "  1. Verify registry is accessible"
+echo "  2. Verify credentials are correct"
+echo "  3. Verify all API Connect images are pushed"
+
+================================================================================
+13. VERIFY FILE INTEGRITY
+================================================================================
+
+echo "=== Checking for backup files ==="
+find . -name "*.bak"
+
+# Expected: No output (all .bak files should be deleted)
+# If you see .bak files, delete them:
+#   find . -name "*.bak" -delete
+
+echo "=== Checking file count ==="
+echo "YAML files: $(ls -1 *.yaml 2>/dev/null | wc -l)"
+echo "Text files: $(ls -1 *.txt *.md 2>/dev/null | wc -l)"
+echo "Busybox files: $(ls -1 busybox/* 2>/dev/null | wc -l)"
+
+# Expected counts:
+#   YAML files: 13
+#   Text files: 4 (including README.md)
+#   Busybox files: 3
+
+================================================================================
+14. COMPREHENSIVE VERIFICATION
+================================================================================
+
+echo "=== Running comprehensive verification ==="
+echo ""
+
+# Function to check a value
+check_value() {
+  local name=$1
+  local value=$2
+  local expected_pattern=$3
+
+  if echo "$value" | grep -q "$expected_pattern"; then
+    echo "✓ $name: OK"
+  else
+    echo "✗ $name: ISSUE DETECTED"
+    echo "  Found: $value"
+  fi
+}
+
+# Check namespace
+NS=$(grep "namespace:" 05-management-cr.yaml | head -1 | awk '{print $2}')
+check_value "Namespace" "$NS" "^[a-z0-9-]\+$"
+
+# Check DNS
+DNS=$(grep "fqdn:" 10-httpproxy-management.yaml | head -1 | awk '{print $2}')
+check_value "DNS" "$DNS" "\."
+
+# Check ingress class
+IC=$(grep "ingressClassName:" 05-management-cr.yaml | head -1 | awk '{print $2}')
+check_value "Ingress Class" "$IC" "^[a-z0-9-]\+$"
+
+# Check storage class
+SC=$(grep "storageClassName:" 05-management-cr.yaml | head -1 | awk '{print $2}')
+check_value "Storage Class" "$SC" "^[a-z0-9-]\+$"
+
+# Check registry
+REG=$(grep "imageRegistry:" 05-management-cr.yaml | head -1 | awk '{print $2}')
+check_value "Registry" "$REG" "/"
+
+# Check for placeholders
+PLACEHOLDERS=$(grep -r "PLACEHOLDER" . --include="*.yaml" --exclude="*.bak" | wc -l)
+if [ "$PLACEHOLDERS" -eq 0 ]; then
+  echo "✓ No placeholders found: OK"
+else
+  echo "✗ Placeholders still exist: $PLACEHOLDERS occurrences"
+  echo "  Run: grep -r \"PLACEHOLDER\" . --include=\"*.yaml\""
+fi
+
+echo ""
+echo "=== Verification Summary ==="
+echo "Namespace:      $NS"
+echo "DNS Domain:     $(echo $DNS | cut -d'.' -f2-)"
+echo "Ingress Class:  $IC"
+echo "Storage Class:  $SC"
+echo "Registry:       $REG"
+echo "Placeholders:   $PLACEHOLDERS remaining"
+
+================================================================================
+15. PRE-DEPLOYMENT CHECKLIST
+================================================================================
+
+echo ""
+echo "=== Pre-Deployment Checklist ==="
+echo ""
+echo "Configuration:"
+echo "  ☐ All placeholders replaced (verified above)"
+echo "  ☐ Namespace configured"
+echo "  ☐ DNS domain configured"
+echo "  ☐ Ingress class configured"
+echo "  ☐ Storage class configured"
+echo "  ☐ Registry configured"
+echo ""
+echo "Kubernetes Cluster:"
+echo "  ☐ kubectl access working"
+echo "  ☐ cert-manager installed"
+echo "  ☐ Contour installed"
+echo "  ☐ Contour LoadBalancer has external IP"
+echo "  ☐ Storage class exists"
+echo "  ☐ Ingress class exists"
+echo ""
+echo "External Dependencies:"
+echo "  ☐ DNS configured and propagated"
+echo "  ☐ Container registry accessible"
+echo "  ☐ All API Connect images pushed to registry"
+echo "  ☐ Registry credentials configured"
+echo ""
+echo "Ready for Deployment:"
+echo "  ☐ All above items checked"
+echo "  ☐ Reviewed README.md"
+echo "  ☐ Ready to proceed with DEPLOYMENT-GUIDE.txt"
+echo ""
+
+================================================================================
+16. NEXT STEPS
+================================================================================
+
+echo "If all verifications passed:"
+echo "  → Proceed to DEPLOYMENT-GUIDE.txt"
+echo ""
+echo "If any verification failed:"
+echo "  → Review and fix the configuration"
+echo "  → Re-run this verification script"
+echo "  → Do not proceed with deployment until all checks pass"
+echo ""
+echo "Need to reconfigure?"
+echo "  → Edit environment variables in 00-CONFIGURE.txt"
+echo "  → Re-run the sed replacement commands"
+echo "  → Re-run this verification script"
+echo ""
+
+================================================================================
+END OF VERIFICATION
+================================================================================
