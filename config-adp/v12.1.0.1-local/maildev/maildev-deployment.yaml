@@ -1,4 +1,17 @@
 ---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: maildev-data
+  namespace: apic
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: nfs-ssd
+  resources:
+    requests:
+      storage: 5Gi
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -32,6 +45,9 @@ spec:
           value: "1025"
         - name: MAILDEV_WEB_PORT
           value: "1080"
+        volumeMounts:
+        - name: maildev-data
+          mountPath: /data
         resources:
           requests:
             memory: "128Mi"
@@ -39,6 +55,10 @@ spec:
           limits:
             memory: "256Mi"
             cpu: "200m"
+      volumes:
+      - name: maildev-data
+        persistentVolumeClaim:
+          claimName: maildev-data
 ---
 apiVersion: v1
 kind: Service
