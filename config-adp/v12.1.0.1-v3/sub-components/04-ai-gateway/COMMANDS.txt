@@ -1,0 +1,138 @@
+================================================================================
+SUB-COMPONENT: AI Gateway (DataPower)
+================================================================================
+CR Kind:     GatewayCluster
+CR Name:     ai-gateway
+Namespace:   ${APIC_NAMESPACE}
+Endpoints:
+  AI Gateway API:     https://${APIC_AI_GATEWAY_HOST}
+  AI Gateway Manager: https://${APIC_AI_GATEWAY_MANAGER_HOST}
+
+PREREQUISITE: Core deployment (Management + DataPower Operator) must be Running.
+
+================================================================================
+REQUIRED SECRETS (create before deploying CR)
+================================================================================
+
+# DataPower admin credentials
+kubectl get secret datapower-admin-credentials -n ${APIC_NAMESPACE} 2>/dev/null || \
+  kubectl create secret generic datapower-admin-credentials \
+    --namespace=${APIC_NAMESPACE} \
+    --from-literal=password=admin
+
+# The mTLS certs (ai-gateway-service, ai-gateway-peering) are created automatically
+# by the operator. Verify after deployment:
+kubectl get secret ai-gateway-service ai-gateway-peering -n ${APIC_NAMESPACE}
+
+================================================================================
+DEPLOY
+================================================================================
+
+# 1. Deploy AI Gateway CR
+kubectl apply -f ai-gateway-cr.yaml -n ${APIC_NAMESPACE}
+
+# 2. Watch status (ctrl+c when phase = Running, takes 5–10 min)
+kubectl get gatewaycluster ai-gateway -n ${APIC_NAMESPACE} -w
+
+# 3. Monitor pods
+kubectl get pods -n ${APIC_NAMESPACE} -l app.kubernetes.io/instance=ai-gateway -w
+
+# 4. Apply HTTPProxy ingress
+envsubst < ../../ingress/contour-httpproxy-ai-gateway.yaml.template | kubectl apply -f -
+
+# 5. Verify HTTPProxy
+kubectl get httpproxy -n ${APIC_NAMESPACE} ai-gateway-gateway ai-gateway-gateway-manager
+
+================================================================================
+GET-DEPLOYMENT STATUS
+================================================================================
+
+# Subsystem status
+kubectl get gatewaycluster ai-gateway -n ${APIC_NAMESPACE}
+kubectl get gatewaycluster ai-gateway -n ${APIC_NAMESPACE} -o jsonpath='{.status.phase}'
+
+# All gateway clusters at once
+kubectl get gatewaycluster -n ${APIC_NAMESPACE}
+
+# Pod status
+kubectl get pods -n ${APIC_NAMESPACE} -l app.kubernetes.io/instance=ai-gateway
+
+# Describe CR for full status and conditions
+kubectl describe gatewaycluster ai-gateway -n ${APIC_NAMESPACE}
+
+# HTTPProxy status
+kubectl get httpproxy -n ${APIC_NAMESPACE} ai-gateway-gateway ai-gateway-gateway-manager
+
+# Service endpoints
+kubectl get svc -n ${APIC_NAMESPACE} | grep ai-gateway
+
+# Check TLS certificates
+kubectl get certificate -n ${APIC_NAMESPACE} | grep ai-gateway
+kubectl get secret -n ${APIC_NAMESPACE} | grep ai-gateway
+
+================================================================================
+DEBUG
+================================================================================
+
+# AI Gateway pod logs (DataPower)
+kubectl logs -n ${APIC_NAMESPACE} -l app.kubernetes.io/instance=ai-gateway --tail=100
+
+# DataPower system log
+kubectl logs -n ${APIC_NAMESPACE} $(kubectl get pod -n ${APIC_NAMESPACE} -l app.kubernetes.io/instance=ai-gateway -o name | head -1) \
+  -c datapower --tail=100
+
+# Describe pods for events/errors
+kubectl describe pod -n ${APIC_NAMESPACE} -l app.kubernetes.io/instance=ai-gateway
+
+# Check events
+kubectl get events -n ${APIC_NAMESPACE} --sort-by='.lastTimestamp' | grep -i "ai-gateway" | tail -20
+
+# Test gateway init endpoint
+curl -sk -o /dev/null -w "%{http_code}" https://${APIC_AI_GATEWAY_HOST}/webapi-init-check
+# Expected: 200 when fully initialized
+
+# Test DataPower management REST API
+curl -sk -u admin:admin https://${APIC_AI_GATEWAY_MANAGER_HOST}/mgmt/status/main | python3 -m json.tool
+
+# Exec into DataPower pod
+kubectl exec -it -n ${APIC_NAMESPACE} $(kubectl get pod -n ${APIC_NAMESPACE} -l app.kubernetes.io/instance=ai-gateway -o name | head -1) \
+  -c datapower -- /bin/bash
+
+# Check gateway peering status (if clustered)
+kubectl exec -n ${APIC_NAMESPACE} $(kubectl get pod -n ${APIC_NAMESPACE} -l app.kubernetes.io/instance=ai-gateway -o name | head -1) \
+  -c datapower -- sh -c "dpadmin" 2>/dev/null || true
+
+================================================================================
+DESTROY
+================================================================================
+
+# 1. Delete HTTPProxy
+kubectl delete httpproxy ai-gateway-gateway ai-gateway-gateway-manager -n ${APIC_NAMESPACE}
+
+# 2. Delete AI Gateway CR (operator handles pod/service cleanup)
+kubectl delete gatewaycluster ai-gateway -n ${APIC_NAMESPACE}
+kubectl wait --for=delete gatewaycluster ai-gateway -n ${APIC_NAMESPACE} --timeout=300s
+
+# 3. Delete PVCs (token management storage)
+kubectl delete pvc -n ${APIC_NAMESPACE} -l app.kubernetes.io/instance=ai-gateway
+
+# 4. Verify cleanup
+kubectl get all -n ${APIC_NAMESPACE} -l app.kubernetes.io/instance=ai-gateway
+
+================================================================================
+POST-DEPLOYMENT: REGISTER IN APIC CLOUD MANAGER
+================================================================================
+
+After deployment, register the AI Gateway in Cloud Manager:
+1. Login to https://${APIC_MGMT_ADMIN_HOST}/admin
+2. Navigate to: Topology → Infrastructure → Gateway Services
+3. Click "Register Service"
+4. Fill in:
+   - Title: AI DataPower Gateway
+   - Type: DataPower API Gateway
+   - API endpoint base: https://${APIC_AI_GATEWAY_HOST}
+   - Management endpoint: https://${APIC_AI_GATEWAY_MANAGER_HOST}
+   - TLS Client Profile: gateway-management-client-default
+5. Save and verify status shows "Online"
+
+================================================================================

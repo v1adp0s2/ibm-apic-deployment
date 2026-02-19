@@ -1,0 +1,24 @@
+apiVersion: networking.k8s.io/v1
+kind: IngressClass
+metadata:
+  name: contour
+spec:
+  controller: projectcontour.io/ingress-controller
+---
+# Configure Contour to work with cert-manager
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: contour
+  namespace: projectcontour
+data:
+  contour.yaml: |
+    # Enable HTTPProxy CRD
+    disablePermitInsecure: false
+    # Configure to watch all namespaces
+    incluster: true
+    # TLS configuration
+    tls:
+      fallback-certificate:
+        name: fallback-cert
+        namespace: projectcontour

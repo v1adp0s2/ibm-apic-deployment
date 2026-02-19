@@ -1,0 +1,80 @@
+================================================================================
+APIC DEPLOYMENT DESTROY LOG (OPTIMIZED FAST-PATH)
+================================================================================
+Package:    v12.1.0.1-v3
+Namespace:  ibm-apic
+Cluster:    admin@talos-proxmox-cluster
+Start time: 2026-02-19 18:38:24
+Strategy:   CRD-first cascade deletion with parallel PVC wipe
+
+================================================================================
+error: the path "/Volumes/Data/Users/vladimir/git/ibm/demos/ibm-apic-deployment/config-adp/v12.1.0.1-v3/core/01-operators/01-apiconnect-crds.yaml" does not exist
+customresourcedefinition.apiextensions.k8s.io "analyticsbackups.analytics.apiconnect.ibm.com" deleted
+customresourcedefinition.apiextensions.k8s.io "analyticsclusters.analytics.apiconnect.ibm.com" deleted
+customresourcedefinition.apiextensions.k8s.io "analyticsrestores.analytics.apiconnect.ibm.com" deleted
+customresourcedefinition.apiextensions.k8s.io "analyticssecretrotations.analytics.apiconnect.ibm.com" deleted
+customresourcedefinition.apiextensions.k8s.io "apiconnectclusters.apiconnect.ibm.com" deleted
+customresourcedefinition.apiextensions.k8s.io "backups.postgresql.k8s.enterprisedb.io" deleted
+customresourcedefinition.apiextensions.k8s.io "clusterimagecatalogs.postgresql.k8s.enterprisedb.io" deleted
+customresourcedefinition.apiextensions.k8s.io "clusters.postgresql.k8s.enterprisedb.io" deleted
+customresourcedefinition.apiextensions.k8s.io "databases.postgresql.k8s.enterprisedb.io" deleted
+customresourcedefinition.apiextensions.k8s.io "devportalclusters.devportal.apiconnect.ibm.com" deleted
+customresourcedefinition.apiextensions.k8s.io "federatedapimanagementclusters.federatedapimanagement.apiconnect.ibm.com" deleted
+customresourcedefinition.apiextensions.k8s.io "gatewayclusters.gateway.apiconnect.ibm.com" deleted
+customresourcedefinition.apiextensions.k8s.io "imagecatalogs.postgresql.k8s.enterprisedb.io" deleted
+customresourcedefinition.apiextensions.k8s.io "managementclusters.management.apiconnect.ibm.com" deleted
+customresourcedefinition.apiextensions.k8s.io "managementdbupgrades.management.apiconnect.ibm.com" deleted
+customresourcedefinition.apiextensions.k8s.io "managementrestores.management.apiconnect.ibm.com" deleted
+customresourcedefinition.apiextensions.k8s.io "managementsecretrotations.management.apiconnect.ibm.com" deleted
+customresourcedefinition.apiextensions.k8s.io "nanogatewayclusters.nanogateway.apiconnect.ibm.com" deleted
+customresourcedefinition.apiextensions.k8s.io "poolers.postgresql.k8s.enterprisedb.io" deleted
+customresourcedefinition.apiextensions.k8s.io "portalbackups.portal.apiconnect.ibm.com" deleted
+customresourcedefinition.apiextensions.k8s.io "portalclusters.portal.apiconnect.ibm.com" deleted
+customresourcedefinition.apiextensions.k8s.io "portalrestores.portal.apiconnect.ibm.com" deleted
+customresourcedefinition.apiextensions.k8s.io "portalsecretrotations.portal.apiconnect.ibm.com" deleted
+customresourcedefinition.apiextensions.k8s.io "publications.postgresql.k8s.enterprisedb.io" deleted
+customresourcedefinition.apiextensions.k8s.io "scheduledbackups.postgresql.k8s.enterprisedb.io" deleted
+customresourcedefinition.apiextensions.k8s.io "subscriptions.postgresql.k8s.enterprisedb.io" deleted
+customresourcedefinition.apiextensions.k8s.io "wmapigatewaybackups.wmapigateway.apiconnect.ibm.com" deleted
+customresourcedefinition.apiextensions.k8s.io "wmapigatewayclusters.wmapigateway.apiconnect.ibm.com" deleted
+customresourcedefinition.apiextensions.k8s.io "wmapigatewayrestores.wmapigateway.apiconnect.ibm.com" deleted
+customresourcedefinition.apiextensions.k8s.io "datapowermonitors.datapower.ibm.com" deleted
+customresourcedefinition.apiextensions.k8s.io "datapowerrollouts.datapower.ibm.com" deleted
+customresourcedefinition.apiextensions.k8s.io "datapowerservicebindings.datapower.ibm.com" deleted
+customresourcedefinition.apiextensions.k8s.io "datapowerservices.datapower.ibm.com" deleted
+customresourcedefinition.apiextensions.k8s.io "datapowermustgathers.datapower.ibm.com" deleted
+customresourcedefinition.apiextensions.k8s.io "datapowermustgathermanagers.datapower.ibm.com" deleted
+[INFO] CRD deletion triggered. Operators cleaning up all CRs in parallel...
+[INFO] Proceeding with cleanup...
+No resources found
+No resources found in ibm-apic namespace.
+customresourcedefinition.apiextensions.k8s.io "valkey.valkey.datapower.ibm.com" deleted
+customresourcedefinition.apiextensions.k8s.io "valkeyreplications.valkey.datapower.ibm.com" deleted
+customresourcedefinition.apiextensions.k8s.io "valkeysentinels.valkey.datapower.ibm.com" deleted
+
+================================================================================
+DESTROY SUMMARY (OPTIMIZED FAST-PATH)
+================================================================================
+End time: $(date '+%Y-%m-%d %H:%M:%S')
+
+Deletion strategy executed:
+  [FAST-DELETE]   CRDs deleted (35 APIC CRDs + cascading all CRs)
+  [OK]            HTTPProxy resources (none found)
+  [SKIP]          PVC wipe (no PVCs found - already cleaned)
+  [OK]            PVCs deleted (none found)
+  [OK]            Operators deleted (ibm-apiconnect, datapower-operator)
+  [OK]            Namespace deleted (ibm-apic)
+  [CLEANUP]       Valkey CRDs deleted (3 remaining CRDs)
+
+Verification results:
+  [CLEAN]  Namespace: ibm-apic not found
+  [CLEAN]  CRDs: All APIC/DataPower/Valkey CRDs removed
+  [CLEAN]  PVs: No orphaned PVs detected
+
+--------------------------------------------------------------------------------
+RESULT: CLEAN
+--------------------------------------------------------------------------------
+All resources successfully removed. No leftovers detected.
+
+The cluster is clean and ready for fresh deployment.
+================================================================================

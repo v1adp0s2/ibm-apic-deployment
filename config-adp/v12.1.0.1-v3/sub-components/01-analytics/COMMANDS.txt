@@ -1,0 +1,147 @@
+================================================================================
+SUB-COMPONENT: Analytics
+================================================================================
+CR Kind:     AnalyticsCluster
+CR Name:     analytics
+Namespace:   ${APIC_NAMESPACE}
+Endpoints:
+  Analytics Ingestion: https://${APIC_ANALYTICS_INGESTION_HOST}
+
+PREREQUISITE: Core deployment (Management) must be Running.
+              Deploy Analytics BEFORE wM Developer Portal (DevPortal has analyticsRef).
+
+================================================================================
+REQUIRED SECRETS
+================================================================================
+
+# The analytics-ingestion-client mTLS cert is auto-created by cert-manager
+# from 04-ingress-issuer.yaml. Verify:
+kubectl get secret analytics-ingestion-client -n ${APIC_NAMESPACE}
+# If missing, re-apply: kubectl apply -f ../../core/02-prerequisites/04-ingress-issuer.yaml -n ${APIC_NAMESPACE}
+
+================================================================================
+DEPLOY
+================================================================================
+
+# 1. Deploy Analytics CR
+kubectl apply -f analytics-cr.yaml -n ${APIC_NAMESPACE}
+
+# 2. Watch status (ctrl+c when phase = Running, takes 10–15 min)
+kubectl get analyticscluster -n ${APIC_NAMESPACE} -w
+
+# 3. Monitor pods coming up
+kubectl get pods -n ${APIC_NAMESPACE} -l app.kubernetes.io/instance=analytics -w
+
+# 4. Apply HTTPProxy ingress
+envsubst < ../../ingress/contour-httpproxy-analytics.yaml.template | kubectl apply -f -
+
+# 5. Verify HTTPProxy
+kubectl get httpproxy -n ${APIC_NAMESPACE} analytics-ai-endpoint
+
+================================================================================
+GET-DEPLOYMENT STATUS
+================================================================================
+
+# Subsystem status
+kubectl get analyticscluster -n ${APIC_NAMESPACE}
+kubectl get analyticscluster analytics -n ${APIC_NAMESPACE} -o jsonpath='{.status.phase}'
+
+# Pod status
+kubectl get pods -n ${APIC_NAMESPACE} -l app.kubernetes.io/instance=analytics
+
+# Describe CR for full status
+kubectl describe analyticscluster analytics -n ${APIC_NAMESPACE}
+
+# Conditions (shows Warnings)
+kubectl get analyticscluster analytics -n ${APIC_NAMESPACE} -o jsonpath='{.status.conditions}' | python3 -m json.tool
+
+# HTTPProxy status
+kubectl get httpproxy -n ${APIC_NAMESPACE} analytics-ai-endpoint
+
+# Service endpoints
+kubectl get svc -n ${APIC_NAMESPACE} | grep analytics
+
+# Storage (PVCs)
+kubectl get pvc -n ${APIC_NAMESPACE} | grep analytics
+
+# TLS certificates
+kubectl get certificate -n ${APIC_NAMESPACE} | grep analytics
+kubectl get secret -n ${APIC_NAMESPACE} | grep analytics
+
+================================================================================
+DEBUG
+================================================================================
+
+# Analytics pod logs
+kubectl logs -n ${APIC_NAMESPACE} -l app.kubernetes.io/instance=analytics --tail=100
+
+# Specific analytics component logs
+kubectl logs -n ${APIC_NAMESPACE} -l app.kubernetes.io/name=mtls-gw,app.kubernetes.io/instance=analytics --tail=100
+kubectl logs -n ${APIC_NAMESPACE} -l app.kubernetes.io/name=storage,app.kubernetes.io/instance=analytics --tail=100
+kubectl logs -n ${APIC_NAMESPACE} -l app.kubernetes.io/name=message-queue,app.kubernetes.io/instance=analytics --tail=100
+
+# Describe pods for events
+kubectl describe pod -n ${APIC_NAMESPACE} -l app.kubernetes.io/instance=analytics
+
+# Check events
+kubectl get events -n ${APIC_NAMESPACE} --sort-by='.lastTimestamp' | grep -i analytics | tail -20
+
+# Test analytics ingestion endpoint (requires mTLS client cert)
+curl -sk --cert /tmp/analytics-client.crt --key /tmp/analytics-client.key \
+  https://${APIC_ANALYTICS_INGESTION_HOST}/analytics/ready
+
+# Check analytics health from within cluster
+kubectl run debug-analytics --image=curlimages/curl --rm -it --restart=Never -- \
+  curl -sk https://analytics-mtls-gw.${APIC_NAMESPACE}.svc:4443/analytics/ready
+
+# Exec into analytics pod
+kubectl exec -it -n ${APIC_NAMESPACE} \
+  $(kubectl get pod -n ${APIC_NAMESPACE} -l app.kubernetes.io/instance=analytics -o name | head -1) \
+  -- /bin/bash
+
+# Run system-check job manually (validates connectivity with management and devportal)
+kubectl create job \
+  --from=cronjob/$(kubectl get cronjob -n ${APIC_NAMESPACE} -o name | grep system-check | cut -d'/' -f2) \
+  analytics-system-check-manual-$(date +%s) -n ${APIC_NAMESPACE}
+# Then check logs:
+kubectl logs -n ${APIC_NAMESPACE} job/analytics-system-check-manual-* --tail=50
+
+================================================================================
+DESTROY
+================================================================================
+
+# 1. Delete HTTPProxy
+kubectl delete httpproxy analytics-ai-endpoint -n ${APIC_NAMESPACE}
+
+# 2. Delete Analytics CR
+kubectl delete analyticscluster analytics -n ${APIC_NAMESPACE}
+kubectl wait --for=delete analyticscluster analytics -n ${APIC_NAMESPACE} --timeout=600s
+
+# 3. Delete PVCs (analytics data will be lost!)
+kubectl delete pvc -n ${APIC_NAMESPACE} -l app.kubernetes.io/instance=analytics
+
+# 4. Verify cleanup
+kubectl get all -n ${APIC_NAMESPACE} -l app.kubernetes.io/instance=analytics
+kubectl get pvc -n ${APIC_NAMESPACE} | grep analytics
+
+================================================================================
+POST-DEPLOYMENT: REGISTER IN APIC CLOUD MANAGER
+================================================================================
+
+After deployment, register Analytics in Cloud Manager:
+1. Login to https://${APIC_MGMT_ADMIN_HOST}/admin
+2. Navigate to: Topology → Infrastructure → Analytics Services
+3. Click "Register Service"
+4. Fill in:
+   - Title: Analytics
+   - Ingestion endpoint: https://${APIC_ANALYTICS_INGESTION_HOST}
+   - TLS Client Profile: analytics-ingestion-default
+5. Save and verify status shows "Online"
+
+Then associate with Gateway Service:
+1. Navigate to: Topology → Infrastructure → Gateway Services
+2. Select your gateway → Edit
+3. Set Analytics Service to "Analytics"
+4. Save
+
+================================================================================

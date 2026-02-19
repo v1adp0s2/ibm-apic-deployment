@@ -1,0 +1,281 @@
+================================================================================
+IBM API CONNECT v12.1.0.1-v3 — START HERE
+================================================================================
+Parameterized deployment package for: k8s.adp.example.com
+
+Configuration (from config.env):
+  Domain:    k8s.adp.example.com
+  Registry:  harbor.adp.example.com/ibm-apic
+  Namespace: ibm-apic
+  Storage:   nfs-ssd
+  Ingress:   Contour (auto-assign LoadBalancer IP)
+
+================================================================================
+QUICK START
+================================================================================
+
+1. REVIEW CONFIGURATION
+   cat config.env
+
+2. SOURCE CONFIGURATION
+   source config.env
+
+3. VERIFY VARIABLES LOADED
+   env | grep APIC_
+
+4. CREATE KUBERNETES NAMESPACE
+   kubectl create namespace ${APIC_NAMESPACE}
+
+5. CREATE SECRETS (see 00-CONFIGURE.txt for commands)
+   - Registry pull secret
+   - Management admin password
+   - DataPower admin password
+   - wM Gateway secrets
+   - DevPortal secrets
+
+6. DEPLOY CORE COMPONENTS
+   Follow: core/DEPLOY-CORE.txt
+
+7. DEPLOY SUB-COMPONENTS
+   Follow: sub-components/*/COMMANDS.txt
+
+8. DEPLOY INGRESS
+   Follow: ingress/COMMANDS.txt
+
+================================================================================
+PACKAGE STRUCTURE
+================================================================================
+
+v12.1.0.1-v3/
+├── config.env                      ← YOUR configuration (source this!)
+├── config.env.template             ← Template with all options
+├── 00-START-HERE.txt               ← You are here
+├── 00-CONFIGURE.txt                ← Configuration guide
+├── INDEX.yaml                      ← Package metadata
+├── README.md                       ← Detailed documentation
+│
+├── core/                           ← CORE DEPLOYMENT (deploy first)
+│   ├── DEPLOY-CORE.txt             │ Core deployment instructions
+│   ├── 01-operators/               │ API Connect + DataPower operators + CRDs
+│   │   ├── 01-ibm-apiconnect-crds.yaml
+│   │   ├── 02-apiconnect-operator.yaml.template
+│   │   └── 03-datapower-operator.yaml.template
+│   ├── 02-prerequisites/           │ cert-manager, IngressClass
+│   │   ├── 04-ingress-issuer.yaml
+│   │   └── 05-contour-ingressclass.yaml
+│   └── 03-management/              │ Management Cluster
+│       └── 06-management-cr.yaml.template
+│
+├── sub-components/                 ← OPTIONAL COMPONENTS
+│   ├── 01-analytics/               │ Analytics Cluster
+│   │   ├── COMMANDS.txt
+│   │   └── analytics-cr.yaml.template
+│   ├── 02-wm-devportal/            │ webMethods Developer Portal
+│   │   ├── COMMANDS.txt
+│   │   └── devportal-cr.yaml.template
+│   ├── 03-wm-gateway/              │ webMethods API Gateway
+│   │   ├── COMMANDS.txt
+│   │   └── wm-gateway-cr.yaml.template
+│   └── 04-ai-gateway/              │ AI DataPower Gateway
+│       ├── COMMANDS.txt
+│       └── ai-gateway-cr.yaml.template
+│
+├── ingress/                        ← INGRESS RESOURCES
+│   ├── COMMANDS.txt
+│   ├── contour-httpproxy-management.yaml.template
+│   ├── contour-httpproxy-analytics.yaml.template
+│   ├── contour-httpproxy-devportal.yaml.template
+│   ├── contour-httpproxy-gateway.yaml.template
+│   └── contour-httpproxy-ai-gateway.yaml.template
+│
+└── utilities/                      ← UTILITIES
+    ├── busybox/                    │ Troubleshooting pod
+    └── register-services/          │ Service registration
+
+================================================================================
+WHAT'S DIFFERENT IN v3?
+================================================================================
+
+This package uses ENVIRONMENT VARIABLE PARAMETERIZATION:
+
+OLD WAY (v1/v2):
+  - Hardcoded values in YAML files
+  - Manual sed/find commands to replace values
+  - Error-prone, easy to miss values
+  - Version control shows environment-specific data
+
+NEW WAY (v3):
+  [OK] Single config file (config.env)
+  [OK] YAML templates with ${VARIABLE} placeholders
+  [OK] Standard envsubst tool for processing
+  [OK] Version control friendly
+  [OK] Easy environment switching
+
+Key Concept:
+  - .yaml.template files have ${APIC_*} variables
+  - envsubst replaces variables with actual values
+  - Apply to Kubernetes
+
+Example:
+  source config.env
+  envsubst < core/03-management/06-management-cr.yaml.template | kubectl apply -f -
+
+================================================================================
+CONFIGURATION
+================================================================================
+
+All configuration is in config.env:
+  export APIC_NAMESPACE="ibm-apic"
+  export APIC_DOMAIN_BASE="k8s.adp.example.com"
+  export APIC_IMAGE_REGISTRY="harbor.adp.example.com/ibm-apic"
+  export APIC_STORAGE_CLASS="nfs-ssd"
+  # ... and 50+ more variables
+
+To customize:
+  1. Edit config.env
+  2. Source it: source config.env
+  3. Deploy templates using envsubst
+
+See 00-CONFIGURE.txt for detailed instructions.
+
+================================================================================
+DEPLOYMENT WORKFLOW
+================================================================================
+
+STEP 1: Configure
+──────────────────────────────────────────────────────────────────────────────
+source config.env
+
+STEP 2: Create Secrets
+──────────────────────────────────────────────────────────────────────────────
+# Registry pull secret
+kubectl create secret docker-registry ${APIC_IMAGE_PULL_SECRET} \
+  --namespace=${APIC_NAMESPACE} \
+  --docker-server=${APIC_REGISTRY_SERVER} \
+  --docker-username=${APIC_REGISTRY_USERNAME} \
+  --docker-password=${APIC_REGISTRY_PASSWORD}
+
+# Other secrets - see 00-CONFIGURE.txt for complete list
+
+STEP 3: Deploy Core
+──────────────────────────────────────────────────────────────────────────────
+# CRDs (no templating)
+kubectl apply -f core/01-operators/01-ibm-apiconnect-crds.yaml
+
+# Operators (with templating)
+envsubst < core/01-operators/02-apiconnect-operator.yaml.template | kubectl apply -f -
+envsubst < core/01-operators/03-datapower-operator.yaml.template | kubectl apply -f -
+
+# Prerequisites
+kubectl apply -f core/02-prerequisites/
+
+# Management
+envsubst < core/03-management/06-management-cr.yaml.template | kubectl apply -f -
+
+# Wait for Ready
+kubectl wait --for=condition=Ready managementcluster/management \
+  -n ${APIC_NAMESPACE} --timeout=30m
+
+STEP 4: Deploy Sub-Components
+──────────────────────────────────────────────────────────────────────────────
+# Analytics
+envsubst < sub-components/01-analytics/analytics-cr.yaml.template | kubectl apply -f -
+
+# wM DevPortal (requires Analytics)
+envsubst < sub-components/02-wm-devportal/devportal-cr.yaml.template | kubectl apply -f -
+
+# wM Gateway
+envsubst < sub-components/03-wm-gateway/wm-gateway-cr.yaml.template | kubectl apply -f -
+
+# AI Gateway
+envsubst < sub-components/04-ai-gateway/ai-gateway-cr.yaml.template | kubectl apply -f -
+
+STEP 5: Deploy Ingress
+──────────────────────────────────────────────────────────────────────────────
+for template in ingress/*.yaml.template; do
+  envsubst < "$template" | kubectl apply -f -
+done
+
+================================================================================
+SERVICE ENDPOINTS
+================================================================================
+
+After deployment, access services at:
+
+  Management:
+    Admin (Cloud Manager):  https://admin-apic.${APIC_DOMAIN_BASE}
+    API Manager:            https://manager-apic.${APIC_DOMAIN_BASE}
+    Platform API:           https://api-apic.${APIC_DOMAIN_BASE}
+    Consumer API:           https://consumer-apic.${APIC_DOMAIN_BASE}
+
+  Analytics:
+    Ingestion:              https://ai-apic.${APIC_DOMAIN_BASE}
+
+  Developer Portal:
+    Admin:                  https://admin-devportal-apic.${APIC_DOMAIN_BASE}
+    UI:                     https://devportal-apic.${APIC_DOMAIN_BASE}
+
+  wM Gateway:
+    API:                    https://wmapigw-apic.${APIC_DOMAIN_BASE}
+    UI:                     https://wmapigw-ui-apic.${APIC_DOMAIN_BASE}
+
+  AI Gateway:
+    Gateway:                https://ai-rgw-apic.${APIC_DOMAIN_BASE}
+    Manager:                https://ai-rgwd-apic.${APIC_DOMAIN_BASE}
+
+With your configuration (k8s.adp.example.com):
+  - https://admin-apic.k8s.adp.example.com
+  - https://manager-apic.k8s.adp.example.com
+  - etc.
+
+================================================================================
+VERIFICATION
+================================================================================
+
+# Check operator pods
+kubectl get pods -n ${APIC_NAMESPACE} | grep operator
+
+# Check management cluster
+kubectl get managementcluster -n ${APIC_NAMESPACE}
+
+# Check all APIC resources
+kubectl get apic -n ${APIC_NAMESPACE}
+
+# Check ingress
+kubectl get httpproxy -n ${APIC_NAMESPACE}
+
+# Check services are Ready
+kubectl get managementcluster,analyticscluster,devportalcluster,wmapigatewaycluster \
+  -n ${APIC_NAMESPACE} -o wide
+
+================================================================================
+TROUBLESHOOTING
+================================================================================
+
+View logs:
+  kubectl logs -n ${APIC_NAMESPACE} -l name=ibm-apiconnect
+
+Debug with busybox:
+  kubectl apply -f utilities/busybox/clear-pvc-pod.yaml
+  kubectl exec -it busybox -n ${APIC_NAMESPACE} -- /bin/sh
+
+Check template processing:
+  source config.env
+  envsubst < template.yaml.template | head -50
+
+Verify no unprocessed variables:
+  source config.env
+  envsubst < template.yaml.template | grep '${' || echo "OK"
+
+================================================================================
+NEXT STEPS
+================================================================================
+
+1. Review README.md for complete documentation
+2. Read 00-CONFIGURE.txt for configuration options
+3. Follow core/DEPLOY-CORE.txt for detailed deployment steps
+4. Check INDEX.yaml for package metadata
+
+For issues or questions, refer to IBM API Connect documentation.
+
+================================================================================

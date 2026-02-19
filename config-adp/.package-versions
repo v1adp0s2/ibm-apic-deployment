@@ -1,0 +1,6 @@
+# IBM API Connect Deployment Package Versions
+# This file tracks all package versions in the config-adp directory
+# Format: <package-name>|<created-date>|<description>
+
+v12.1.0.1-v2|2026-02-19|IBM API Connect v12.1.0.1 parameterized reference package
+v12.1.0.1-v3|2026-02-19|IBM API Connect v12.1.0.1 parameterized deployment for k8s.adp.example.com

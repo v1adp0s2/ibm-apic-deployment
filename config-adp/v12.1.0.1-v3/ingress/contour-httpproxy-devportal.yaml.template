@@ -1,0 +1,36 @@
+---
+# DevPortal Admin API (TLS passthrough - required for mTLS client cert forwarding)
+apiVersion: projectcontour.io/v1
+kind: HTTPProxy
+metadata:
+  name: devportal-admin
+  namespace: ${APIC_NAMESPACE}
+spec:
+  virtualhost:
+    fqdn: ${APIC_DEVPORTAL_ADMIN_HOST}
+    tls:
+      passthrough: true
+  tcpproxy:
+    services:
+    - name: devportal-proxy
+      port: 4443
+---
+# DevPortal Web (Developer Portal UI)
+apiVersion: projectcontour.io/v1
+kind: HTTPProxy
+metadata:
+  name: devportal-web
+  namespace: ${APIC_NAMESPACE}
+spec:
+  virtualhost:
+    fqdn: ${APIC_DEVPORTAL_UI_HOST}
+    tls:
+      secretName: devportal-ui-endpoint
+  routes:
+  - services:
+    - name: devportal-devportal
+      port: 8443
+      protocol: tls
+      validation:
+        caSecret: devportal-ca
+        subjectName: devportal-devportal.apic.svc.cluster.local

@@ -1,0 +1,77 @@
+apiVersion: management.apiconnect.ibm.com/v1beta1
+kind: ManagementCluster
+metadata:
+  name: management
+  namespace: ${APIC_NAMESPACE}
+spec:
+  version: 12.1.0.1
+  imagePullSecrets:
+  - harbor-registry-secret
+  imageRegistry: ${APIC_IMAGE_REGISTRY}
+  profile: n1xc4.m16
+  portal:
+    admin:
+      secretName: portal-admin-client
+  analytics:
+    ingestion:
+      secretName: analytics-ingestion-client
+  gateway:
+    client:
+      secretName: gateway-client-client
+  devPortal:
+    admin:
+      secretName: devportal-admin-client
+  wmAPIGateway:
+    mgmt:
+      secretName: wmapigateway-mgmt-client
+  nanoGateway:
+    mgmt:
+      secretName: nano-gateway-mgmt-client
+  federatedAPIManagement:
+    admin:
+      secretName: federatedapimanagement-admin-client
+  cloudManagerEndpoint:
+    ingressClassName: ${APIC_INGRESS_CLASS}
+    annotations:
+      cert-manager.io/issuer: ingress-issuer
+    hosts:
+    - name: ${APIC_MGMT_ADMIN_HOST}
+      secretName: cm-endpoint
+  apiManagerEndpoint:
+    ingressClassName: ${APIC_INGRESS_CLASS}
+    annotations:
+      cert-manager.io/issuer: ingress-issuer
+    hosts:
+    - name: ${APIC_MGMT_MANAGER_HOST}
+      secretName: apim-endpoint
+  consumerCatalogEndpoint:
+    ingressClassName: ${APIC_INGRESS_CLASS}
+    annotations:
+      cert-manager.io/issuer: ingress-issuer
+    hosts:
+    - name: ${APIC_MGMT_CONSUMER_CATALOG_HOST}
+      secretName: consumer-catalog-endpoint
+  platformAPIEndpoint:
+    ingressClassName: ${APIC_INGRESS_CLASS}
+    annotations:
+      cert-manager.io/issuer: ingress-issuer
+    hosts:
+    - name: ${APIC_MGMT_PLATFORM_API_HOST}
+      secretName: api-endpoint
+  consumerAPIEndpoint:
+    ingressClassName: ${APIC_INGRESS_CLASS}
+    annotations:
+      cert-manager.io/issuer: ingress-issuer
+    hosts:
+    - name: ${APIC_MGMT_CONSUMER_API_HOST}
+      secretName: consumer-endpoint
+  databaseVolumeClaimTemplate:
+    storageClassName: ${APIC_STORAGE_CLASS}
+  microServiceSecurity: certManager
+  certManagerIssuer:
+    name: selfsigning-issuer
+    kind: Issuer
+  license:
+    accept: true
+    use: nonproduction
+    license: L-SBZZ-CNR329

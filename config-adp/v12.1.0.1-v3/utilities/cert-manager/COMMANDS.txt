@@ -1,0 +1,241 @@
+================================================================================
+UTILITY: cert-manager v1.19.2
+================================================================================
+cert-manager is a native Kubernetes certificate management controller. It can
+issue certificates from various sources including self-signed, CA, and ACME
+providers like Let's Encrypt.
+
+IMPORTANT: cert-manager is a PREREQUISITE for IBM API Connect deployment.
+           Deploy cert-manager BEFORE deploying API Connect operators.
+
+Version:      v1.19.2
+Namespace:    cert-manager
+Images:       3 core + 1 optional (controller, cainjector, webhook, acmesolver*)
+              *acmesolver only needed for ACME/Let's Encrypt (not for air-gapped)
+Registry:     ${APIC_IMAGE_REGISTRY}
+
+================================================================================
+QUICK START
+================================================================================
+
+PREREQUISITE: Source the config.env file first!
+  cd ../..
+  source config.env
+
+================================================================================
+METHOD 1: ONLINE DEPLOYMENT (cluster has internet access)
+================================================================================
+
+If your Kubernetes cluster can pull images from quay.io/jetstack:
+
+# Deploy using the original manifest (pulls from quay.io)
+kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.19.2/cert-manager.yaml
+
+# Wait for deployment to be ready
+kubectl wait --for=condition=available --timeout=300s deployment/cert-manager -n cert-manager
+kubectl wait --for=condition=available --timeout=300s deployment/cert-manager-webhook -n cert-manager
+kubectl wait --for=condition=available --timeout=300s deployment/cert-manager-cainjector -n cert-manager
+
+# Verify
+kubectl get pods -n cert-manager
+
+[OK] Done! Proceed to API Connect deployment.
+
+================================================================================
+METHOD 2: OFFLINE/AIR-GAPPED DEPLOYMENT (using internal registry)
+================================================================================
+
+For environments that cannot access quay.io or require using an internal registry.
+
+STEP 1: Push cert-manager images to your internal registry
+-----------------------------------------------------------
+
+Manual commands to download and push images:
+
+  # Pull from quay.io (core images - required for all deployments)
+  docker pull quay.io/jetstack/cert-manager-controller:v1.19.2
+  docker pull quay.io/jetstack/cert-manager-cainjector:v1.19.2
+  docker pull quay.io/jetstack/cert-manager-webhook:v1.19.2
+
+  # Optional: Only if using ACME/Let's Encrypt (not needed for air-gapped)
+  # docker pull quay.io/jetstack/cert-manager-acmesolver:v1.19.2
+
+  # Tag for internal registry
+  docker tag quay.io/jetstack/cert-manager-controller:v1.19.2 \
+    ${APIC_IMAGE_REGISTRY}/cert-manager-controller:v1.19.2
+  docker tag quay.io/jetstack/cert-manager-cainjector:v1.19.2 \
+    ${APIC_IMAGE_REGISTRY}/cert-manager-cainjector:v1.19.2
+  docker tag quay.io/jetstack/cert-manager-webhook:v1.19.2 \
+    ${APIC_IMAGE_REGISTRY}/cert-manager-webhook:v1.19.2
+
+  # Optional: Only if using ACME/Let's Encrypt
+  # docker tag quay.io/jetstack/cert-manager-acmesolver:v1.19.2 \
+  #   ${APIC_IMAGE_REGISTRY}/cert-manager-acmesolver:v1.19.2
+
+  # Push to internal registry
+  docker push ${APIC_IMAGE_REGISTRY}/cert-manager-controller:v1.19.2
+  docker push ${APIC_IMAGE_REGISTRY}/cert-manager-cainjector:v1.19.2
+  docker push ${APIC_IMAGE_REGISTRY}/cert-manager-webhook:v1.19.2
+
+  # Optional: Only if using ACME/Let's Encrypt
+  # docker push ${APIC_IMAGE_REGISTRY}/cert-manager-acmesolver:v1.19.2
+
+STEP 2: Deploy cert-manager using parameterized template
+---------------------------------------------------------
+
+IMPORTANT: Ensure config.env is sourced first!
+
+  # Deploy cert-manager with internal registry images
+  envsubst < cert-manager-v1.19.2.yaml.template | kubectl apply -f -
+
+STEP 3: Wait for cert-manager to be ready
+------------------------------------------
+
+  kubectl wait --for=condition=available --timeout=300s \
+    deployment/cert-manager -n cert-manager
+
+  kubectl wait --for=condition=available --timeout=300s \
+    deployment/cert-manager-webhook -n cert-manager
+
+  kubectl wait --for=condition=available --timeout=300s \
+    deployment/cert-manager-cainjector -n cert-manager
+
+STEP 4: Verify deployment
+--------------------------
+
+  kubectl get pods -n cert-manager
+
+  # Expected output:
+  # NAME                                      READY   STATUS    RESTARTS   AGE
+  # cert-manager-xxxxxxxxxx-xxxxx             1/1     Running   0          2m
+  # cert-manager-cainjector-xxxxxxxxxx-xxxxx  1/1     Running   0          2m
+  # cert-manager-webhook-xxxxxxxxxx-xxxxx     1/1     Running   0          2m
+
+[OK] Done! Proceed to API Connect deployment.
+
+================================================================================
+VERIFICATION COMMANDS
+================================================================================
+
+# Check all cert-manager pods are running
+kubectl get pods -n cert-manager
+
+# Check deployments
+kubectl get deployments -n cert-manager
+
+# Check services
+kubectl get services -n cert-manager
+
+# Check CRDs are installed
+kubectl get crds | grep cert-manager
+
+# Expected CRDs:
+#   certificaterequests.cert-manager.io
+#   certificates.cert-manager.io
+#   challenges.acme.cert-manager.io
+#   clusterissuers.cert-manager.io
+#   issuers.cert-manager.io
+#   orders.acme.cert-manager.io
+
+# Test cert-manager functionality
+kubectl get clusterissuers
+kubectl get issuers --all-namespaces
+
+# Check cert-manager controller logs
+kubectl logs -n cert-manager deployment/cert-manager --tail=50
+
+# Check cert-manager webhook logs
+kubectl logs -n cert-manager deployment/cert-manager-webhook --tail=50
+
+================================================================================
+TROUBLESHOOTING
+================================================================================
+
+Pods in ImagePullBackOff state:
+--------------------------------
+Check that images exist in your registry:
+  docker pull ${APIC_IMAGE_REGISTRY}/cert-manager-controller:v1.19.2
+
+Check registry credentials:
+  kubectl get secret -n cert-manager
+
+Verify the deployment is using correct image names:
+  kubectl get deployment cert-manager -n cert-manager -o yaml | grep image:
+
+Pods in CrashLoopBackOff:
+--------------------------
+Check controller logs:
+  kubectl logs -n cert-manager deployment/cert-manager --tail=100
+
+Check webhook logs:
+  kubectl logs -n cert-manager deployment/cert-manager-webhook --tail=100
+
+Webhook validation errors:
+---------------------------
+Verify webhook service exists:
+  kubectl get svc cert-manager-webhook -n cert-manager
+
+Check webhook endpoint:
+  kubectl get endpoints cert-manager-webhook -n cert-manager
+
+Test webhook connectivity:
+  kubectl run test-webhook --image=curlimages/curl --rm -it --restart=Never -- \
+    curl -vk https://cert-manager-webhook.cert-manager.svc:443
+
+CRDs not created:
+-----------------
+Re-apply the manifest:
+  envsubst < cert-manager-v1.19.2.yaml.template | kubectl apply -f -
+
+Check CRD status:
+  kubectl get crds | grep cert-manager
+
+================================================================================
+UNINSTALL
+================================================================================
+
+# WARNING: This will remove ALL cert-manager resources including any
+#          certificates you have created!
+
+# Delete cert-manager deployment
+kubectl delete -f cert-manager-v1.19.2.yaml.template
+
+# Or use online manifest
+kubectl delete -f https://github.com/cert-manager/cert-manager/releases/download/v1.19.2/cert-manager.yaml
+
+# Verify namespace is deleted
+kubectl get namespace cert-manager
+
+# If namespace is stuck in Terminating state, check for finalizers
+kubectl get namespace cert-manager -o yaml
+
+================================================================================
+NEXT STEPS
+================================================================================
+
+After cert-manager is successfully deployed and running:
+
+1. Return to the main package directory:
+   cd ../..
+
+2. Continue with API Connect core deployment:
+   Follow: core/DEPLOY-CORE.txt
+
+3. cert-manager will automatically issue certificates for:
+   - Management cluster internal communications
+   - Gateway clusters
+   - Developer Portal
+   - Ingress TLS termination (via ingress-issuer)
+
+================================================================================
+NOTES
+================================================================================
+
+- cert-manager v1.19.2 is the latest stable release as of February 2025
+- This version includes important bug fixes from v1.19.0 and v1.19.1
+- cert-manager creates its own namespace (cert-manager) automatically
+- All cert-manager components run in the cert-manager namespace
+- API Connect components run in ${APIC_NAMESPACE} namespace
+- cert-manager watches ALL namespaces for Certificate resources
+
+================================================================================

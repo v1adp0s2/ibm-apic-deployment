@@ -1,0 +1,76 @@
+package: v12.1.0.1-v3
+description: IBM API Connect v12.1.0.1 on Kubernetes (Parameterized for k8s.adp.example.com)
+namespace: ${APIC_NAMESPACE}
+busybox: utilities/busybox/clear-pvc-pod.yaml.template
+start_here: 00-START-HERE.txt
+configure: 00-CONFIGURE.txt
+config_template: config.env.template
+config_file: config.env
+
+environment:
+  domain: k8s.adp.example.com
+  registry: harbor.adp.example.com/ibm-apic
+  storage_class: nfs-ssd
+  namespace: ibm-apic
+  ingress_class: contour
+
+phases:
+  - id: config
+    label: "Configuration Setup"
+    instructions: 00-CONFIGURE.txt
+    required: true
+    description: "Configure environment variables in config.env"
+
+  - id: core
+    label: "Core (Management)"
+    instructions: core/DEPLOY-CORE.txt
+    description: "Deploy APIC operators, prerequisites, and management cluster"
+    templates:
+      - core/01-operators/02-apiconnect-operator.yaml.template
+      - core/01-operators/03-datapower-operator.yaml.template
+      - core/03-management/06-management-cr.yaml.template
+
+  - id: analytics
+    label: "Analytics"
+    instructions: sub-components/01-analytics/COMMANDS.txt
+    description: "Deploy Analytics cluster for monitoring and metrics"
+    templates:
+      - sub-components/01-analytics/analytics-cr.yaml.template
+
+  - id: wm-devportal
+    label: "wM Developer Portal"
+    instructions: sub-components/02-wm-devportal/COMMANDS.txt
+    depends_on: analytics
+    description: "Deploy webMethods Developer Portal (requires Analytics)"
+    templates:
+      - sub-components/02-wm-devportal/devportal-cr.yaml.template
+
+  - id: wm-gateway
+    label: "wM API Gateway"
+    instructions: sub-components/03-wm-gateway/COMMANDS.txt
+    description: "Deploy webMethods API Gateway"
+    templates:
+      - sub-components/03-wm-gateway/wm-gateway-cr.yaml.template
+
+  - id: ai-gateway
+    label: "AI DataPower Gateway"
+    instructions: sub-components/04-ai-gateway/COMMANDS.txt
+    description: "Deploy AI-enhanced DataPower Gateway"
+    templates:
+      - sub-components/04-ai-gateway/ai-gateway-cr.yaml.template
+
+  - id: ingress
+    label: "Ingress (HTTPProxy)"
+    instructions: ingress/COMMANDS.txt
+    description: "Deploy Contour HTTPProxy resources for external access"
+    templates:
+      - ingress/contour-httpproxy-management.yaml.template
+      - ingress/contour-httpproxy-analytics.yaml.template
+      - ingress/contour-httpproxy-devportal.yaml.template
+      - ingress/contour-httpproxy-gateway.yaml.template
+      - ingress/contour-httpproxy-ai-gateway.yaml.template
+
+  - id: registration
+    label: "Service Registration"
+    instructions: utilities/register-services/REGISTER-SERVICES.txt
+    description: "Register gateway services with management cluster"

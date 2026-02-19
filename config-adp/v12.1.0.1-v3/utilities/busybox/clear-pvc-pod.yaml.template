@@ -1,0 +1,59 @@
+---
+# Busybox Pod for Clearing PVC Contents
+#
+# PREREQUISITE: Source config.env first!
+#   cd ../..
+#   source config.env
+#
+# Usage:
+# 1. Update the PVC names in the volumes section (lines 47-50)
+# 2. Deploy using envsubst:
+#    envsubst < clear-pvc-pod.yaml.template | kubectl apply -f -
+# 3. Watch logs:
+#    kubectl logs busybox-clear-pvc -n ${APIC_NAMESPACE} -f
+# 4. Delete when done:
+#    kubectl delete pod busybox-clear-pvc -n ${APIC_NAMESPACE}
+#
+apiVersion: v1
+kind: Pod
+metadata:
+  name: busybox-clear-pvc
+  namespace: ${APIC_NAMESPACE}
+spec:
+  containers:
+  - name: busybox
+    image: ${APIC_IMAGE_REGISTRY}/busybox:1.37-amd64
+    command:
+    - sh
+    - -c
+    - |
+      echo "Starting PVC cleanup..."
+      echo "Clearing /data PVC..."
+      rm -rf /data/* /data/.* 2>/dev/null || true
+      echo "/data cleared"
+
+      echo "Clearing /wal PVC..."
+      rm -rf /wal/* /wal/.* 2>/dev/null || true
+      echo "/wal cleared"
+
+      echo "PVC cleanup completed successfully"
+      echo "Sleeping for 1 hour (pod will be manually deleted)"
+      sleep 3600
+    volumeMounts:
+    - name: data
+      mountPath: /data
+    - name: wal
+      mountPath: /wal
+    securityContext:
+      runAsUser: 0
+      runAsGroup: 0
+  volumes:
+  - name: data
+    persistentVolumeClaim:
+      claimName: management-99543590-db-1
+  - name: wal
+    persistentVolumeClaim:
+      claimName: management-99543590-db-1-wal
+  imagePullSecrets:
+  - name: ${APIC_IMAGE_PULL_SECRET}
+  restartPolicy: Never

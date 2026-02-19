@@ -1,0 +1,20 @@
+---
+# Analytics Ingestion Endpoint
+apiVersion: projectcontour.io/v1
+kind: HTTPProxy
+metadata:
+  name: analytics-ai-endpoint
+  namespace: ${APIC_NAMESPACE}
+spec:
+  virtualhost:
+    fqdn: ${APIC_ANALYTICS_INGESTION_HOST}
+    tls:
+      secretName: analytics-ai-endpoint
+  routes:
+  - services:
+    - name: analytics-mtls-gw
+      port: 4443
+      protocol: tls
+      validation:
+        caSecret: analytics-ca
+        subjectName: analytics-mtls-gw.apic.svc.cluster.local

@@ -1,0 +1,157 @@
+================================================================================
+INGRESS DEPLOYMENT — Contour HTTPProxy Resources
+================================================================================
+All HTTPProxy resources use Contour (projectcontour.io/v1)
+Namespace: ${APIC_NAMESPACE}
+Contour IP: ${APIC_LOADBALANCER_IP} (or auto-assigned)
+DNS: *.${APIC_DOMAIN_BASE} → ${APIC_LOADBALANCER_IP}
+
+Deploy ingress AFTER the corresponding sub-system is Running.
+
+================================================================================
+FILE REFERENCE
+================================================================================
+
+contour-httpproxy-management.yaml.template   — Cloud Manager, API Manager, Platform API,
+                                   Consumer API, Consumer Catalog
+contour-httpproxy-gateway.yaml.template   — webMethods API Gateway + UI (wmapigw)
+contour-httpproxy-ai-gateway.yaml.template   — AI DataPower Gateway API + Manager
+contour-httpproxy-devportal.yaml.template    — DevPortal Admin (TLS passthrough) + UI
+contour-httpproxy-analytics.yaml.template    — Analytics Ingestion endpoint
+
+================================================================================
+DEPLOY
+================================================================================
+
+# Deploy all ingress resources at once (after ALL sub-systems are Running)
+envsubst < contour-httpproxy-management.yaml.template | kubectl apply -f -
+envsubst < contour-httpproxy-gateway.yaml.template | kubectl apply -f -
+envsubst < contour-httpproxy-ai-gateway.yaml.template | kubectl apply -f -
+envsubst < contour-httpproxy-devportal.yaml.template | kubectl apply -f -
+envsubst < contour-httpproxy-analytics.yaml.template | kubectl apply -f -
+
+# OR deploy selectively per component:
+# envsubst < contour-httpproxy-management.yaml.template | kubectl apply -f -   # After management is Running
+# envsubst < contour-httpproxy-gateway.yaml.template | kubectl apply -f -   # After wM Gateway is Running
+# envsubst < contour-httpproxy-ai-gateway.yaml.template | kubectl apply -f -   # After AI Gateway is Running
+# envsubst < contour-httpproxy-devportal.yaml.template | kubectl apply -f -    # After DevPortal is Running
+# envsubst < contour-httpproxy-analytics.yaml.template | kubectl apply -f -    # After Analytics is Running
+
+================================================================================
+GET-DEPLOYMENT STATUS
+================================================================================
+
+# Show all HTTPProxy resources with status
+kubectl get httpproxy -n ${APIC_NAMESPACE}
+
+# Detailed status (look for currentStatus: valid)
+kubectl get httpproxy -n ${APIC_NAMESPACE} -o wide
+
+# Show specific HTTPProxy details
+kubectl describe httpproxy -n ${APIC_NAMESPACE} <name>
+
+# Show all HTTPProxy grouped by component
+echo "=== Management ===" && kubectl get httpproxy -n ${APIC_NAMESPACE} \
+  management-admin management-api-manager management-platform-api \
+  management-consumer-api management-consumer-catalog 2>/dev/null
+echo "=== wM Gateway ===" && kubectl get httpproxy -n ${APIC_NAMESPACE} \
+  wmapigw-mgmt wmapigw-gateway 2>/dev/null
+echo "=== AI Gateway ===" && kubectl get httpproxy -n ${APIC_NAMESPACE} \
+  ai-gateway-gateway ai-gateway-gateway-manager 2>/dev/null
+echo "=== DevPortal ===" && kubectl get httpproxy -n ${APIC_NAMESPACE} \
+  devportal-admin devportal-web 2>/dev/null
+echo "=== Analytics ===" && kubectl get httpproxy -n ${APIC_NAMESPACE} \
+  analytics-ai-endpoint 2>/dev/null
+
+# Check Contour LoadBalancer
+kubectl get svc envoy -n projectcontour
+
+================================================================================
+DEBUG
+================================================================================
+
+# Check Contour logs for routing issues
+kubectl logs -n projectcontour deployment/contour --tail=100
+
+# Check Envoy (data-plane) logs
+kubectl logs -n projectcontour daemonset/envoy --tail=100
+
+# Show invalid HTTPProxy resources
+kubectl get httpproxy -n ${APIC_NAMESPACE} -o json | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+for item in d['items']:
+    name = item['metadata']['name']
+    status = item.get('status', {}).get('currentStatus', 'unknown')
+    desc = item.get('status', {}).get('description', '')
+    if status != 'valid':
+        print(f'INVALID: {name} — {status}: {desc}')
+"
+
+# Check a specific HTTPProxy's backend service exists
+kubectl get httpproxy devportal-admin -n ${APIC_NAMESPACE} -o jsonpath='{.spec.tcpproxy.services}' | python3 -m json.tool
+kubectl get httpproxy management-admin -n ${APIC_NAMESPACE} -o jsonpath='{.spec.routes}' | python3 -m json.tool
+
+# Test endpoint via curl (check TLS)
+curl -vk https://${APIC_MGMT_ADMIN_HOST}/admin 2>&1 | head -30
+
+# Verify TLS certificate on endpoint
+echo "" | openssl s_client -connect ${APIC_MGMT_ADMIN_HOST}:443 \
+  -servername ${APIC_MGMT_ADMIN_HOST} 2>/dev/null | \
+  openssl x509 -noout -subject -issuer -dates
+
+# Test all endpoints
+for url in \
+  "https://${APIC_MGMT_ADMIN_HOST}/admin" \
+  "https://${APIC_MGMT_MANAGER_HOST}" \
+  "https://${APIC_MGMT_PLATFORM_API_HOST}" \
+  "https://${APIC_WM_GATEWAY_HOST}" \
+  "https://${APIC_WM_GATEWAY_UI_HOST}" \
+  "https://${APIC_AI_GATEWAY_HOST}" \
+  "https://${APIC_DEVPORTAL_UI_HOST}" \
+  "https://${APIC_ANALYTICS_INGESTION_HOST}"; do
+  code=$(curl -sk -o /dev/null -w "%{http_code}" "$url" 2>/dev/null)
+  printf "%-65s → %s\n" "$url" "$code"
+done
+
+================================================================================
+DESTROY (individual HTTPProxy resources)
+================================================================================
+
+# Delete all HTTPProxy resources
+kubectl delete httpproxy -n ${APIC_NAMESPACE} --all
+
+# Delete specific component HTTPProxy only
+kubectl delete httpproxy -n ${APIC_NAMESPACE} -l app.kubernetes.io/component=management
+kubectl delete httpproxy -n ${APIC_NAMESPACE} -l app.kubernetes.io/instance=wmapigw
+kubectl delete httpproxy -n ${APIC_NAMESPACE} -l app.kubernetes.io/instance=ai-gateway
+kubectl delete httpproxy -n ${APIC_NAMESPACE} -l app.kubernetes.io/instance=devportal
+kubectl delete httpproxy -n ${APIC_NAMESPACE} -l app.kubernetes.io/instance=analytics
+
+================================================================================
+ENDPOINT QUICK REFERENCE
+================================================================================
+
+Management:
+  Cloud Manager:       https://${APIC_MGMT_ADMIN_HOST}/admin
+  API Manager:         https://${APIC_MGMT_MANAGER_HOST}/manager
+  Platform API:        https://${APIC_MGMT_PLATFORM_API_HOST}
+  Consumer API:        https://${APIC_MGMT_CONSUMER_API_HOST}
+  Consumer Catalog:    https://${APIC_MGMT_CONSUMER_CATALOG_HOST}
+
+wM API Gateway:
+  Gateway API:         https://${APIC_WM_GATEWAY_HOST}
+  Gateway UI:          https://${APIC_WM_GATEWAY_UI_HOST}
+
+AI DataPower Gateway:
+  AI Gateway API:      https://${APIC_AI_GATEWAY_HOST}
+  AI Gateway Manager:  https://${APIC_AI_GATEWAY_MANAGER_HOST}
+
+wM Developer Portal:
+  Portal Admin:        https://${APIC_DEVPORTAL_ADMIN_HOST}
+  Portal UI:           https://${APIC_DEVPORTAL_UI_HOST}
+
+Analytics:
+  Ingestion:           https://${APIC_ANALYTICS_INGESTION_HOST}
+
+================================================================================

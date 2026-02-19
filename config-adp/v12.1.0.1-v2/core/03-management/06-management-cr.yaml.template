@@ -1,0 +1,71 @@
+apiVersion: management.apiconnect.ibm.com/v1beta1
+kind: ManagementCluster
+metadata:
+  name: management
+  namespace: ${APIC_NAMESPACE}
+spec:
+  version: ${APIC_PACKAGE_VERSION}
+  imagePullSecrets:
+  - ${APIC_IMAGE_PULL_SECRET}
+  imageRegistry: ${APIC_IMAGE_REGISTRY}
+  profile: n1xc4.m16
+  portal:
+    admin:
+      secretName: portal-admin-client
+  analytics:
+    ingestion:
+      secretName: analytics-ingestion-client
+  gateway:
+    client:
+      secretName: gateway-client-client
+  devPortal:
+    admin:
+      secretName: devportal-admin-client
+  wmAPIGateway:
+    mgmt:
+      secretName: wmapigateway-mgmt-client
+  nanoGateway:
+    mgmt:
+      secretName: nano-gateway-mgmt-client
+  federatedAPIManagement:
+    admin:
+      secretName: federatedapimanagement-admin-client
+  cloudManagerEndpoint:
+    ingressClassName: ${APIC_INGRESS_CLASS}
+    annotations:
+      cert-manager.io/issuer: ${APIC_CERT_ISSUER_NAME}
+    hosts:
+    - name: ${APIC_MGMT_ADMIN_HOST}
+      secretName: cm-endpoint
+  apiManagerEndpoint:
+    ingressClassName: ${APIC_INGRESS_CLASS}
+    annotations:
+      cert-manager.io/issuer: ${APIC_CERT_ISSUER_NAME}
+    hosts:
+    - name: ${APIC_MGMT_MANAGER_HOST}
+      secretName: apim-endpoint
+  consumerCatalogEndpoint:
+    ingressClassName: ${APIC_INGRESS_CLASS}
+    annotations:
+      cert-manager.io/issuer: ${APIC_CERT_ISSUER_NAME}
+    hosts:
+    - name: ${APIC_MGMT_CONSUMER_CATALOG_HOST}
+      secretName: consumer-catalog-endpoint
+  platformAPIEndpoint:
+    ingressClassName: ${APIC_INGRESS_CLASS}
+    annotations:
+      cert-manager.io/issuer: ${APIC_CERT_ISSUER_NAME}
+    hosts:
+    - name: ${APIC_MGMT_PLATFORM_API_HOST}
+      secretName: api-endpoint
+  consumerAPIEndpoint:
+    ingressClassName: ${APIC_INGRESS_CLASS}
+    annotations:
+      cert-manager.io/issuer: ${APIC_CERT_ISSUER_NAME}
+    hosts:
+    - name: ${APIC_MGMT_CONSUMER_API_HOST}
+      secretName: consumer-endpoint
+  databaseVolumeClaimTemplate:
+    storageClassName: ${APIC_STORAGE_CLASS}
+  databaseLogsVolumeClaimTemplate:
+    storageClassName: ${APIC_STORAGE_CLASS}

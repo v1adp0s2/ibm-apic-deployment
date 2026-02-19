@@ -1,0 +1,291 @@
+================================================================================
+IBM API CONNECT v12.1.0.1-v3 — CONFIGURATION GUIDE
+================================================================================
+This package uses ENVIRONMENT VARIABLE PARAMETERIZATION for configuration.
+
+Pre-configured for:
+  Domain:    k8s.adp.example.com
+  Namespace: ibm-apic
+  Registry:  harbor.adp.example.com/ibm-apic
+  Storage:   nfs-ssd
+  Ingress:   contour (auto-assign LoadBalancer IP)
+
+================================================================================
+HOW PARAMETERIZATION WORKS
+================================================================================
+
+This package uses a DIFFERENT approach than v1/v2:
+  [OK] All configuration is in config.env (single source of truth)
+  [OK] YAML files are templates with ${VARIABLE} placeholders
+  [OK] Templates are processed at deployment time using envsubst
+  [OK] No need to modify YAML files directly
+
+Key Files:
+  config.env          - Active configuration (your values)
+  config.env.template - Documented reference template
+  *.yaml.template     - Parameterized Kubernetes resources
+  *.yaml              - Static resources (no variables)
+
+================================================================================
+CUSTOMIZING CONFIGURATION
+================================================================================
+
+METHOD 1: Edit config.env directly
+──────────────────────────────────────────────────────────────────────────────
+1. Open config.env in your editor:
+   vi config.env
+
+2. Modify any values you need:
+   export APIC_DOMAIN_BASE="production.example.com"
+   export APIC_NAMESPACE="api-connect"
+   export APIC_IMAGE_REGISTRY="registry.example.com/apic"
+   export APIC_STORAGE_CLASS="cephfs"
+
+3. Save and source the configuration:
+   source config.env
+
+4. Verify variables are loaded:
+   env | grep APIC_
+
+METHOD 2: Use config.env.template as reference
+──────────────────────────────────────────────────────────────────────────────
+1. Review the template for all available options:
+   cat config.env.template
+
+2. Copy values you want to customize to config.env
+
+3. Source the updated configuration
+
+================================================================================
+KEY CONFIGURATION VARIABLES
+================================================================================
+
+CORE (Required)
+──────────────────────────────────────────────────────────────────────────────
+APIC_NAMESPACE              - Kubernetes namespace (default: ibm-apic)
+APIC_DOMAIN_BASE            - Base DNS domain for all services
+APIC_IMAGE_REGISTRY         - Container image registry path
+APIC_STORAGE_CLASS          - Storage class for persistent volumes
+APIC_INGRESS_CLASS          - Ingress controller class (default: contour)
+
+NETWORK (Auto-generated from APIC_DOMAIN_BASE)
+──────────────────────────────────────────────────────────────────────────────
+APIC_MGMT_ADMIN_HOST        - admin-apic.${APIC_DOMAIN_BASE}
+APIC_MGMT_MANAGER_HOST      - manager-apic.${APIC_DOMAIN_BASE}
+APIC_MGMT_PLATFORM_API_HOST - api-apic.${APIC_DOMAIN_BASE}
+APIC_ANALYTICS_INGESTION_HOST - ai-apic.${APIC_DOMAIN_BASE}
+APIC_DEVPORTAL_ADMIN_HOST   - admin-devportal-apic.${APIC_DOMAIN_BASE}
+APIC_DEVPORTAL_UI_HOST      - devportal-apic.${APIC_DOMAIN_BASE}
+APIC_WM_GATEWAY_HOST        - wmapigw-apic.${APIC_DOMAIN_BASE}
+APIC_WM_GATEWAY_UI_HOST     - wmapigw-ui-apic.${APIC_DOMAIN_BASE}
+APIC_AI_GATEWAY_HOST        - ai-rgw-apic.${APIC_DOMAIN_BASE}
+APIC_AI_GATEWAY_MANAGER_HOST - ai-rgwd-apic.${APIC_DOMAIN_BASE}
+
+REGISTRY
+──────────────────────────────────────────────────────────────────────────────
+APIC_IMAGE_PULL_SECRET      - Name of docker-registry secret
+APIC_REGISTRY_SERVER        - Registry server (for creating pull secret)
+APIC_REGISTRY_USERNAME      - Registry username
+APIC_REGISTRY_PASSWORD      - Registry password (set before creating secret)
+
+SECRETS
+──────────────────────────────────────────────────────────────────────────────
+APIC_MGMT_ADMIN_PASSWORD        - Management admin password
+APIC_DATAPOWER_ADMIN_PASSWORD   - DataPower admin password
+APIC_WM_GATEWAY_ADMIN_PASSWORD  - wM Gateway admin password
+APIC_WM_GATEWAY_ENC_KEY         - wM Gateway encryption key
+APIC_DEVPORTAL_ENC_KEY          - DevPortal encryption key
+
+CERTIFICATES
+──────────────────────────────────────────────────────────────────────────────
+APIC_CERT_ISSUER_NAME       - cert-manager ClusterIssuer name
+APIC_CERT_ISSUER_KIND       - ClusterIssuer or Issuer
+
+See config.env.template for complete list with descriptions.
+
+================================================================================
+DEPLOYMENT WORKFLOW
+================================================================================
+
+1. CONFIGURE
+   source config.env
+
+2. CREATE SECRETS
+   # Registry pull secret
+   kubectl create secret docker-registry ${APIC_IMAGE_PULL_SECRET} \
+     --namespace=${APIC_NAMESPACE} \
+     --docker-server=${APIC_REGISTRY_SERVER} \
+     --docker-username=${APIC_REGISTRY_USERNAME} \
+     --docker-password=${APIC_REGISTRY_PASSWORD}
+
+   # Management admin
+   kubectl create secret generic ${APIC_MGMT_ADMIN_SECRET} \
+     --namespace=${APIC_NAMESPACE} \
+     --from-literal=password=${APIC_MGMT_ADMIN_PASSWORD}
+
+   # DataPower admin (for AI Gateway)
+   kubectl create secret generic ${APIC_DATAPOWER_ADMIN_SECRET} \
+     --namespace=${APIC_NAMESPACE} \
+     --from-literal=password=${APIC_DATAPOWER_ADMIN_PASSWORD}
+
+   # wM Gateway encryption key
+   kubectl create secret generic ${APIC_WM_GATEWAY_ENC_KEY_SECRET} \
+     --namespace=${APIC_NAMESPACE} \
+     --from-literal=encryptionKey=$(openssl rand -base64 32)
+
+   # wM Gateway admin
+   kubectl create secret generic ${APIC_WM_GATEWAY_ADMIN_SECRET} \
+     --namespace=${APIC_NAMESPACE} \
+     --from-literal=password=${APIC_WM_GATEWAY_ADMIN_PASSWORD}
+
+   # DevPortal encryption key
+   kubectl create secret generic ${APIC_DEVPORTAL_ENC_KEY_SECRET} \
+     --namespace=${APIC_NAMESPACE} \
+     --from-literal=encryptionKey=$(openssl rand -base64 32)
+
+3. DEPLOY TEMPLATES
+   # Using envsubst utility
+   envsubst < core/03-management/06-management-cr.yaml.template | kubectl apply -f -
+
+   # Or save processed file first
+   envsubst < core/03-management/06-management-cr.yaml.template > /tmp/management-cr.yaml
+   kubectl apply -f /tmp/management-cr.yaml
+
+================================================================================
+TEMPLATE PROCESSING COMMANDS
+================================================================================
+
+# Process a single template
+source config.env
+envsubst < template-file.yaml.template | kubectl apply -f -
+
+# Process and save
+source config.env
+envsubst < template-file.yaml.template > output.yaml
+kubectl apply -f output.yaml
+
+# Process multiple templates
+source config.env
+for template in core/01-operators/*.yaml.template; do
+  envsubst < "$template" | kubectl apply -f -
+done
+
+# View processed template (for verification)
+source config.env
+envsubst < core/03-management/06-management-cr.yaml.template | head -50
+
+================================================================================
+TEMPLATE FILES IN THIS PACKAGE
+================================================================================
+
+Core Operators:
+  core/01-operators/02-apiconnect-operator.yaml.template
+  core/01-operators/03-datapower-operator.yaml.template
+
+Core Management:
+  core/03-management/06-management-cr.yaml.template
+
+Sub-Components:
+  sub-components/01-analytics/analytics-cr.yaml.template
+  sub-components/02-wm-devportal/devportal-cr.yaml.template
+  sub-components/03-wm-gateway/wm-gateway-cr.yaml.template
+  sub-components/04-ai-gateway/ai-gateway-cr.yaml.template
+
+Ingress:
+  ingress/contour-httpproxy-management.yaml.template
+  ingress/contour-httpproxy-analytics.yaml.template
+  ingress/contour-httpproxy-devportal.yaml.template
+  ingress/contour-httpproxy-gateway.yaml.template
+  ingress/contour-httpproxy-ai-gateway.yaml.template
+
+Static Files (no processing needed):
+  core/01-operators/01-ibm-apiconnect-crds.yaml
+  core/02-prerequisites/04-ingress-issuer.yaml
+  core/02-prerequisites/05-contour-ingressclass.yaml
+
+================================================================================
+VERIFICATION
+================================================================================
+
+# Verify config loaded
+source config.env && echo "Domain: ${APIC_DOMAIN_BASE}, Namespace: ${APIC_NAMESPACE}"
+
+# Test template processing
+source config.env
+envsubst < core/01-operators/02-apiconnect-operator.yaml.template | grep "namespace:" | head -5
+
+# Verify no unprocessed variables
+source config.env
+envsubst < core/03-management/06-management-cr.yaml.template | grep '${' || echo "OK: All variables processed"
+
+================================================================================
+DNS RECORDS REQUIRED
+================================================================================
+
+All DNS records point to Contour LoadBalancer IP.
+Get the LoadBalancer IP:
+  kubectl get svc -n projectcontour envoy -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+
+Configure wildcard DNS or individual A records:
+  admin-apic.k8s.adp.example.com           → <LoadBalancer-IP>
+  manager-apic.k8s.adp.example.com         → <LoadBalancer-IP>
+  api-apic.k8s.adp.example.com             → <LoadBalancer-IP>
+  consumer-apic.k8s.adp.example.com        → <LoadBalancer-IP>
+  wmapigw-apic.k8s.adp.example.com         → <LoadBalancer-IP>
+  wmapigw-ui-apic.k8s.adp.example.com      → <LoadBalancer-IP>
+  ai-rgw-apic.k8s.adp.example.com          → <LoadBalancer-IP>
+  ai-rgwd-apic.k8s.adp.example.com         → <LoadBalancer-IP>
+  admin-devportal-apic.k8s.adp.example.com → <LoadBalancer-IP>
+  devportal-apic.k8s.adp.example.com       → <LoadBalancer-IP>
+  ai-apic.k8s.adp.example.com              → <LoadBalancer-IP>
+
+Or use wildcard:
+  *.k8s.adp.example.com → <LoadBalancer-IP>
+
+================================================================================
+DIFFERENCES FROM v1/v2 PACKAGES
+================================================================================
+
+v1/v2 Approach (static YAML with sed replacements):
+  - Hardcoded values in YAML files
+  - Manual find/sed commands to replace values
+  - Error-prone (easy to miss values)
+  - Version control shows all environment-specific values
+
+v3 Approach (environment variable templates):
+  [OK] Single config file (config.env)
+  [OK] Reusable templates
+  [OK] Standard Unix envsubst tool
+  [OK] Version control friendly (no secrets in templates)
+  [OK] Easy environment switching (source different config.env)
+  [OK] Automation ready (CI/CD pipelines)
+
+================================================================================
+TROUBLESHOOTING
+================================================================================
+
+Issue: Variables not substituted
+Solution: Ensure you've sourced config.env before processing templates
+  source config.env
+  env | grep APIC_
+
+Issue: envsubst not found
+Solution: Install gettext package
+  # macOS
+  brew install gettext
+
+  # Ubuntu/Debian
+  apt-get install gettext-base
+
+Issue: Secret already exists
+Solution: Delete and recreate, or use kubectl create with --dry-run
+  kubectl delete secret <secret-name> -n ${APIC_NAMESPACE}
+  # Then recreate
+
+Issue: Need to change a value after deployment
+Solution: Edit config.env, source it, and reprocess the template
+  vi config.env
+  source config.env
+  envsubst < template.yaml.template | kubectl apply -f -
+
+================================================================================

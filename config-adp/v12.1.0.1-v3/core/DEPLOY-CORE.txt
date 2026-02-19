@@ -1,0 +1,244 @@
+================================================================================
+IBM API CONNECT v12.1.0.1-v3 — CORE DEPLOYMENT COMMANDS
+================================================================================
+Cluster:   Kubernetes  |  Ingress: Contour  |  Namespace: ${APIC_NAMESPACE}
+Domain:    ${APIC_DOMAIN_BASE}  |  Registry: ${APIC_IMAGE_REGISTRY}
+
+IMPORTANT: 1. Source config.env first, 2. Run from core/ directory
+  cd <package-directory>/core/
+
+================================================================================
+PREREQUISITES: cert-manager & Contour must already be installed
+================================================================================
+
+# Verify cert-manager is ready
+kubectl get pods -n cert-manager
+kubectl wait --for=condition=available --timeout=300s deployment/cert-manager -n cert-manager
+
+# Verify Contour is ready
+kubectl get pods -n projectcontour
+kubectl get svc envoy -n projectcontour  # Must have EXTERNAL-IP
+
+# Get Contour LoadBalancer IP (for DNS records)
+kubectl get svc -n projectcontour envoy -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+
+================================================================================
+STEP 1 — NAMESPACE & SECRETS
+================================================================================
+
+# 1.1 Create namespace
+kubectl create namespace ${APIC_NAMESPACE}
+
+# 1.2 Create Harbor registry pull secret
+kubectl create secret docker-registry harbor-registry-secret \
+  --namespace=${APIC_NAMESPACE} \
+  --docker-server=${APIC_REGISTRY_SERVER} \
+  --docker-username=admin \
+  --docker-password=${APIC_REGISTRY_PASSWORD}
+
+# 1.3 Create DataPower admin credentials secret
+kubectl create secret generic datapower-admin-credentials \
+  --namespace=${APIC_NAMESPACE} \
+  --from-literal=password=admin
+
+# 1.4 Create management admin password secret
+kubectl create secret generic management-admin-secret \
+  --namespace=${APIC_NAMESPACE} \
+  --from-literal=password=Admin123!
+
+# 1.5 Verify secrets
+kubectl get secrets -n ${APIC_NAMESPACE}
+
+================================================================================
+STEP 2 — OPERATORS
+================================================================================
+
+# 2.1 Install API Connect CRDs (must be first)
+kubectl apply --server-side --force-conflicts -f 01-operators/01-apiconnect-crds.yaml
+
+# Wait for CRDs to be established
+kubectl wait --for=condition=Established crd/managementclusters.management.apiconnect.ibm.com --timeout=60s
+kubectl wait --for=condition=Established crd/gatewayclusters.gateway.apiconnect.ibm.com --timeout=60s
+
+# 2.2 Install API Connect Operator
+kubectl apply -f 01-operators/02-apiconnect-operator.yaml -n ${APIC_NAMESPACE}
+
+# 2.3 Install DataPower Operator
+kubectl apply -f 01-operators/03-datapower-operator.yaml -n ${APIC_NAMESPACE}
+
+# 2.4 Wait for operators to be ready
+kubectl wait --for=condition=available --timeout=300s deployment/ibm-apiconnect -n ${APIC_NAMESPACE}
+kubectl wait --for=condition=available --timeout=300s deployment/datapower-operator -n ${APIC_NAMESPACE}
+
+# 2.5 Patch all service accounts with imagePullSecrets
+for sa in $(kubectl get sa -n ${APIC_NAMESPACE} -o name | cut -d'/' -f2); do
+  kubectl patch sa "$sa" -n ${APIC_NAMESPACE} \
+    -p '{"imagePullSecrets": [{"name": "harbor-registry-secret"}]}'
+done
+
+================================================================================
+STEP 3 — PREREQUISITES (cert-manager issuers + IngressClass)
+================================================================================
+
+# 3.1 Apply ingress CA and mTLS client certificates
+kubectl apply -f 02-prerequisites/04-ingress-issuer.yaml -n ${APIC_NAMESPACE}
+
+# 3.2 Wait for ingress-ca certificate to be issued
+kubectl wait --for=condition=Ready certificate/ingress-ca -n ${APIC_NAMESPACE} --timeout=120s
+
+# 3.3 Verify all certificates from ingress-issuer are ready
+kubectl get certificates -n ${APIC_NAMESPACE}
+
+# 3.4 Apply Contour IngressClass
+kubectl apply -f 02-prerequisites/05-contour-ingressclass.yaml
+
+# 3.5 Verify IngressClass
+kubectl get ingressclass contour
+
+================================================================================
+STEP 4 — MANAGEMENT SUBSYSTEM  (15–30 min to be ready)
+================================================================================
+
+# 4.1 Deploy Management CR
+kubectl apply -f 03-management/06-management-cr.yaml -n ${APIC_NAMESPACE}
+
+# 4.2 Watch status (ctrl+c when phase = Running)
+kubectl get managementcluster -n ${APIC_NAMESPACE} -w
+
+# 4.3 Monitor pods coming up
+kubectl get pods -n ${APIC_NAMESPACE} -l app.kubernetes.io/instance=management -w
+
+# 4.4 Check schema upgrade jobs (wait for all to Complete)
+kubectl get jobs -n ${APIC_NAMESPACE} | grep "up-"
+
+================================================================================
+STEP 5 — INGRESS (HTTPProxy for Management)
+================================================================================
+
+# 5.1 Apply Management HTTPProxy resources
+kubectl apply -f ../ingress/01-management-httpproxy.yaml
+
+# 5.2 Verify HTTPProxy resources are valid
+kubectl get httpproxy -n ${APIC_NAMESPACE}
+# Expected: All show STATUS=valid
+
+================================================================================
+STEP 6 — VERIFY CORE DEPLOYMENT
+================================================================================
+
+# 6.1 All subsystem statuses (look for phase=Running)
+kubectl get managementcluster -n ${APIC_NAMESPACE}
+
+# 6.2 All pods running
+kubectl get pods -n ${APIC_NAMESPACE}
+
+# 6.3 All HTTPProxy valid
+kubectl get httpproxy -n ${APIC_NAMESPACE}
+
+# 6.4 Test Cloud Manager endpoint
+curl -sk -o /dev/null -w "%{http_code}" https://${APIC_MGMT_ADMIN_HOST}/admin
+# Expected: 200 or 302
+
+# 6.5 Test Platform API endpoint
+curl -sk -o /dev/null -w "%{http_code}" https://${APIC_MGMT_PLATFORM_API_HOST}/api/cloud/admin/identity-providers
+# Expected: 200
+
+# 6.6 Get admin password
+kubectl get secret -n ${APIC_NAMESPACE} management-admin-secret -o jsonpath='{.data.password}' | base64 -d && echo
+
+================================================================================
+GET-DEPLOYMENT STATUS COMMANDS
+================================================================================
+
+# Overall status
+kubectl get managementcluster -n ${APIC_NAMESPACE}
+kubectl get pods -n ${APIC_NAMESPACE}
+kubectl get httpproxy -n ${APIC_NAMESPACE}
+
+# Management details
+kubectl describe managementcluster management -n ${APIC_NAMESPACE}
+kubectl get managementcluster management -n ${APIC_NAMESPACE} -o jsonpath='{.status.conditions}' | python3 -m json.tool
+
+# Certificates
+kubectl get certificates -n ${APIC_NAMESPACE}
+kubectl get secrets -n ${APIC_NAMESPACE} | grep -v "default-token\|Opaque-registry"
+
+# Storage (PVCs)
+kubectl get pvc -n ${APIC_NAMESPACE}
+
+# Events (sorted by time)
+kubectl get events -n ${APIC_NAMESPACE} --sort-by='.lastTimestamp' | tail -20
+
+================================================================================
+DEBUG COMMANDS
+================================================================================
+
+# Management pod logs
+kubectl logs -n ${APIC_NAMESPACE} -l app.kubernetes.io/name=management --tail=100
+kubectl logs -n ${APIC_NAMESPACE} deployment/management-apim --tail=100
+kubectl logs -n ${APIC_NAMESPACE} deployment/management-lur --tail=100
+kubectl logs -n ${APIC_NAMESPACE} deployment/management-juhu --tail=100
+
+# Operator logs
+kubectl logs -n ${APIC_NAMESPACE} deployment/ibm-apiconnect --tail=100
+kubectl logs -n ${APIC_NAMESPACE} deployment/datapower-operator --tail=100
+
+# cert-manager logs
+kubectl logs -n cert-manager deployment/cert-manager --tail=50
+
+# Contour logs
+kubectl logs -n projectcontour deployment/contour --tail=50
+
+# Exec into management pod
+kubectl exec -it -n ${APIC_NAMESPACE} deployment/management-apim -- /bin/bash
+
+# Test internal connectivity
+kubectl run debug-dns --image=busybox --rm -it --restart=Never -- \
+  wget -qO- http://management-juhu.${APIC_NAMESPACE}.svc:2000
+
+# Check PostgreSQL cluster (Management DB)
+kubectl get cluster -n ${APIC_NAMESPACE}
+kubectl describe cluster -n ${APIC_NAMESPACE} management-*
+
+================================================================================
+DESTROY COMMANDS
+================================================================================
+
+# WARNING: Destructive! Removes all core components.
+
+# 1. Delete Management
+kubectl delete managementcluster management -n ${APIC_NAMESPACE}
+kubectl wait --for=delete managementcluster management -n ${APIC_NAMESPACE} --timeout=600s
+
+# 2. Delete PostgreSQL cluster (if still exists)
+kubectl delete cluster -n ${APIC_NAMESPACE} --all
+
+# 3. Delete all PVCs
+kubectl delete pvc -n ${APIC_NAMESPACE} --all
+
+# 4. Delete operators
+kubectl delete -f 01-operators/02-apiconnect-operator.yaml -n ${APIC_NAMESPACE}
+kubectl delete -f 01-operators/03-datapower-operator.yaml -n ${APIC_NAMESPACE}
+
+# 5. Delete CRDs (removes ALL APIC resources from cluster!)
+kubectl delete -f 01-operators/01-apiconnect-crds.yaml
+
+# 6. Delete prerequisites
+kubectl delete -f 02-prerequisites/04-ingress-issuer.yaml -n ${APIC_NAMESPACE}
+
+# 7. Delete namespace (final cleanup)
+kubectl delete namespace ${APIC_NAMESPACE}
+
+================================================================================
+ENDPOINT REFERENCE
+================================================================================
+
+Cloud Manager:       https://${APIC_MGMT_ADMIN_HOST}/admin
+API Manager:         https://${APIC_MGMT_MANAGER_HOST}/manager
+Platform API:        https://${APIC_MGMT_PLATFORM_API_HOST}
+Consumer API:        https://${APIC_MGMT_CONSUMER_API_HOST}
+Consumer Catalog:    https://${APIC_MGMT_CONSUMER_CATALOG_HOST}
+
+Default credentials: admin / Admin123!
+
+================================================================================
