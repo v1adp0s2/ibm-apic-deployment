@@ -1,0 +1,157 @@
+================================================================================
+INGRESS DEPLOYMENT — Contour HTTPProxy Resources
+================================================================================
+All HTTPProxy resources use Contour (projectcontour.io/v1)
+Namespace: apic
+Contour IP: 10.20.221.222
+DNS: *.k8s.adp.example.com → 10.20.221.222
+
+Deploy ingress AFTER the corresponding sub-system is Running.
+
+================================================================================
+FILE REFERENCE
+================================================================================
+
+01-management-httpproxy.yaml   — Cloud Manager, API Manager, Platform API,
+                                   Consumer API, Consumer Catalog
+03-wm-gateway-httpproxy.yaml   — webMethods API Gateway + UI (wmapigw)
+04-ai-gateway-httpproxy.yaml   — AI DataPower Gateway API + Manager
+05-devportal-httpproxy.yaml    — DevPortal Admin (TLS passthrough) + UI
+06-analytics-httpproxy.yaml    — Analytics Ingestion endpoint
+
+================================================================================
+DEPLOY
+================================================================================
+
+# Deploy all ingress resources at once (after ALL sub-systems are Running)
+kubectl apply -f 01-management-httpproxy.yaml
+kubectl apply -f 03-wm-gateway-httpproxy.yaml
+kubectl apply -f 04-ai-gateway-httpproxy.yaml
+kubectl apply -f 05-devportal-httpproxy.yaml
+kubectl apply -f 06-analytics-httpproxy.yaml
+
+# OR deploy selectively per component:
+# kubectl apply -f 01-management-httpproxy.yaml   # After management is Running
+# kubectl apply -f 03-wm-gateway-httpproxy.yaml   # After wM Gateway is Running
+# kubectl apply -f 04-ai-gateway-httpproxy.yaml   # After AI Gateway is Running
+# kubectl apply -f 05-devportal-httpproxy.yaml    # After DevPortal is Running
+# kubectl apply -f 06-analytics-httpproxy.yaml    # After Analytics is Running
+
+================================================================================
+GET-DEPLOYMENT STATUS
+================================================================================
+
+# Show all HTTPProxy resources with status
+kubectl get httpproxy -n apic
+
+# Detailed status (look for currentStatus: valid)
+kubectl get httpproxy -n apic -o wide
+
+# Show specific HTTPProxy details
+kubectl describe httpproxy -n apic <name>
+
+# Show all HTTPProxy grouped by component
+echo "=== Management ===" && kubectl get httpproxy -n apic \
+  management-admin management-api-manager management-platform-api \
+  management-consumer-api management-consumer-catalog 2>/dev/null
+echo "=== wM Gateway ===" && kubectl get httpproxy -n apic \
+  wmapigw-mgmt wmapigw-gateway 2>/dev/null
+echo "=== AI Gateway ===" && kubectl get httpproxy -n apic \
+  ai-gateway-gateway ai-gateway-gateway-manager 2>/dev/null
+echo "=== DevPortal ===" && kubectl get httpproxy -n apic \
+  devportal-admin devportal-web 2>/dev/null
+echo "=== Analytics ===" && kubectl get httpproxy -n apic \
+  analytics-ai-endpoint 2>/dev/null
+
+# Check Contour LoadBalancer
+kubectl get svc envoy -n projectcontour
+
+================================================================================
+DEBUG
+================================================================================
+
+# Check Contour logs for routing issues
+kubectl logs -n projectcontour deployment/contour --tail=100
+
+# Check Envoy (data-plane) logs
+kubectl logs -n projectcontour daemonset/envoy --tail=100
+
+# Show invalid HTTPProxy resources
+kubectl get httpproxy -n apic -o json | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+for item in d['items']:
+    name = item['metadata']['name']
+    status = item.get('status', {}).get('currentStatus', 'unknown')
+    desc = item.get('status', {}).get('description', '')
+    if status != 'valid':
+        print(f'INVALID: {name} — {status}: {desc}')
+"
+
+# Check a specific HTTPProxy's backend service exists
+kubectl get httpproxy devportal-admin -n apic -o jsonpath='{.spec.tcpproxy.services}' | python3 -m json.tool
+kubectl get httpproxy management-admin -n apic -o jsonpath='{.spec.routes}' | python3 -m json.tool
+
+# Test endpoint via curl (check TLS)
+curl -vk https://admin-apic.k8s.adp.example.com/admin 2>&1 | head -30
+
+# Verify TLS certificate on endpoint
+echo "" | openssl s_client -connect admin-apic.k8s.adp.example.com:443 \
+  -servername admin-apic.k8s.adp.example.com 2>/dev/null | \
+  openssl x509 -noout -subject -issuer -dates
+
+# Test all endpoints
+for url in \
+  "https://admin-apic.k8s.adp.example.com/admin" \
+  "https://manager-apic.k8s.adp.example.com" \
+  "https://api-apic.k8s.adp.example.com" \
+  "https://wmapigw.apic.k8s.adp.example.com" \
+  "https://wmapigw-ui.apic.k8s.adp.example.com" \
+  "https://ai-rgw-apic.k8s.adp.example.com" \
+  "https://devportal-apic.k8s.adp.example.com" \
+  "https://ai-apic.k8s.adp.example.com"; do
+  code=$(curl -sk -o /dev/null -w "%{http_code}" "$url" 2>/dev/null)
+  printf "%-65s → %s\n" "$url" "$code"
+done
+
+================================================================================
+DESTROY (individual HTTPProxy resources)
+================================================================================
+
+# Delete all HTTPProxy resources
+kubectl delete httpproxy -n apic --all
+
+# Delete specific component HTTPProxy only
+kubectl delete -f 01-management-httpproxy.yaml
+kubectl delete -f 03-wm-gateway-httpproxy.yaml
+kubectl delete -f 04-ai-gateway-httpproxy.yaml
+kubectl delete -f 05-devportal-httpproxy.yaml
+kubectl delete -f 06-analytics-httpproxy.yaml
+
+================================================================================
+ENDPOINT QUICK REFERENCE
+================================================================================
+
+Management:
+  Cloud Manager:       https://admin-apic.k8s.adp.example.com/admin
+  API Manager:         https://manager-apic.k8s.adp.example.com/manager
+  Platform API:        https://api-apic.k8s.adp.example.com
+  Consumer API:        https://consumer-apic.k8s.adp.example.com
+  Consumer Catalog:    https://consumer-catalog-apic.k8s.adp.example.com
+
+wM API Gateway:
+  Gateway API:         https://wmapigw.apic.k8s.adp.example.com
+  Gateway UI:          https://wmapigw-ui.apic.k8s.adp.example.com
+
+AI DataPower Gateway:
+  AI Gateway API:      https://ai-rgw-apic.k8s.adp.example.com
+  AI Gateway Manager:  https://ai-rgwd-apic.k8s.adp.example.com
+
+wM Developer Portal:
+  Portal Admin:        https://admin-devportal-apic.k8s.adp.example.com
+  Portal UI:           https://devportal-apic.k8s.adp.example.com
+
+Analytics:
+  Ingestion:           https://ai-apic.k8s.adp.example.com
+
+================================================================================

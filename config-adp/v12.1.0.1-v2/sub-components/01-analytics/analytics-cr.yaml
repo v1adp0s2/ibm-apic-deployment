@@ -1,0 +1,37 @@
+apiVersion: analytics.apiconnect.ibm.com/v1beta1
+kind: AnalyticsCluster
+metadata:
+  name: analytics
+spec:
+  version: 12.1.0.1
+  license:
+    accept: true
+    use: nonproduction
+    license: L-SBZZ-CNR329
+  profile: n1xc2.m16
+  imagePullSecrets:
+  - harbor-registry-secret
+  imageRegistry: harbor.adp.example.com/apic
+  microServiceSecurity: certManager
+  certManagerIssuer:
+    name: selfsigning-issuer
+    kind: Issuer
+  ingestion:
+    endpoint:
+      ingressClassName: contour
+      annotations:
+        cert-manager.io/issuer: ingress-issuer
+      hosts:
+      - name: ai.apic.k8s.adp.example.com
+        secretName: analytics-ai-endpoint
+    clientSubjectDN: CN=analytics-ingestion-client,O=cert-manager
+  mtlsValidateClient: true
+  analyticsMode: true
+  federatedAPIManagementMode: false
+  devPortalMode: false
+  storage:
+    type: shared
+    shared:
+      volumeClaimTemplate:
+        storageClassName: nfs-ssd
+        volumeSize: 50Gi

@@ -1,0 +1,45 @@
+apiVersion: gateway.apiconnect.ibm.com/v1beta1
+kind: GatewayCluster
+metadata:
+  name: gwv6
+  namespace: apic
+spec:
+  version: 12.1.0.1
+  profile: n1xc4.m8
+  imagePullSecrets:
+  - harbor-registry-secret
+  imageRegistry: harbor.adp.example.com/apic
+  apicGatewayServiceV5CompatibilityMode: false
+  gatewayEndpoint:
+    ingressClassName: contour
+    annotations:
+      cert-manager.io/issuer: ingress-issuer
+    hosts:
+    - name: rgw-apic.k8s.adp.example.com
+      secretName: gwv6-endpoint
+  gatewayManagerEndpoint:
+    ingressClassName: contour
+    annotations:
+      cert-manager.io/issuer: ingress-issuer
+    hosts:
+    - name: rgwd-apic.k8s.adp.example.com
+      secretName: gwv6-manager-endpoint
+  apicGatewayServiceTLS:
+    secretName: gateway-service
+  apicGatewayPeeringTLS:
+    secretName: gateway-peering
+  mgmtPlatformEndpointCASecret:
+    secretName: ingress-ca
+  datapowerLogLevel: 3
+  license:
+    accept: true
+    use: nonproduction
+    license: L-SBZZ-CNR329
+  tokenManagementService:
+    enabled: true
+    storage:
+      storageClassName: nfs-ssd
+      volumeSize: 30Gi
+  adminUser:
+    secretName: datapower-admin-credentials
+  mtlsValidateClient: false

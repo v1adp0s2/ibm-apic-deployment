@@ -1,0 +1,36 @@
+package: v12.1.0.1-v2
+description: IBM API Connect v12.1.0.1 on Kubernetes (Contour ingress)
+namespace: apic
+busybox: utilities/busybox/clear-pvc-pod.yaml
+start_here: 00-START-HERE.txt
+configure: 00-CONFIGURE.txt
+
+phases:
+  - id: core
+    label: "Core (Management)"
+    instructions: core/DEPLOY-CORE.txt
+
+  - id: analytics
+    label: "Analytics"
+    instructions: sub-components/01-analytics/COMMANDS.txt
+
+  - id: wm-devportal
+    label: "wM Developer Portal"
+    instructions: sub-components/02-wm-devportal/COMMANDS.txt
+    depends_on: analytics
+
+  - id: wm-gateway
+    label: "wM API Gateway"
+    instructions: sub-components/03-wm-gateway/COMMANDS.txt
+
+  - id: ai-gateway
+    label: "AI DataPower Gateway"
+    instructions: sub-components/04-ai-gateway/COMMANDS.txt
+
+  - id: ingress
+    label: "Ingress"
+    instructions: ingress/COMMANDS.txt
+
+  - id: registration
+    label: "Service Registration"
+    instructions: utilities/register-services/REGISTER-SERVICES.txt

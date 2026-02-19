@@ -1,0 +1,145 @@
+================================================================================
+POST-DEPLOYMENT: REGISTER SERVICES IN CLOUD MANAGER TOPOLOGY
+================================================================================
+Cloud Manager: https://admin-apic.k8s.adp.example.com/admin
+Credentials:   admin / Admin123!
+
+Register all sub-components in this order:
+  1. Analytics  →  2. wM Developer Portal
+  →  3. wM API Gateway  →  4. AI DataPower Gateway
+
+================================================================================
+API-BASED REGISTRATION (using Platform API + curl)
+================================================================================
+
+# First, get an access token
+TOKEN=$(curl -sk -X POST https://api-apic.k8s.adp.example.com/api/token \
+  -H "Content-Type: application/json" \
+  -d '{
+    "grant_type": "password",
+    "username": "admin",
+    "password": "Admin123!",
+    "realm": "admin/default-idp-1",
+    "client_id": "aa166ee3-2502-44bc-bebc-bd5e787150c5",
+    "client_secret": "bec0153c-bee9-4eb3-94e4-08b2fa43cf62"
+  }' | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+echo "Token: $TOKEN"
+
+# Get admin org URL
+curl -sk https://api-apic.k8s.adp.example.com/api/orgs/admin \
+  -H "Authorization: Bearer $TOKEN" | python3 -m json.tool | grep '"url"'
+
+# Get availability zone
+curl -sk "https://api-apic.k8s.adp.example.com/api/orgs/admin/availability-zones" \
+  -H "Authorization: Bearer $TOKEN" | python3 -m json.tool | grep '"name"\|"url"'
+
+================================================================================
+1. REGISTER ANALYTICS
+================================================================================
+
+Internal FQDN:  https://analytics.apic.svc
+  (canonical ClusterIP service on port 443 — cert SAN covers analytics.apic.svc)
+
+UI Steps:
+  1. Cloud Manager → Topology → Infrastructure → Analytics Services
+  2. "Register Service"
+  3. Title: Analytics
+  4. Ingestion endpoint: https://analytics.apic.svc
+  5. TLS Client Profile: analytics-ingestion-default
+  6. Save → Status: Online
+
+Verify (API):
+curl -sk "https://api-apic.k8s.adp.example.com/api/orgs/admin/availability-zones/availability-zone-default/analytics-services" \
+  -H "Authorization: Bearer $TOKEN" | python3 -m json.tool | grep '"name"\|"endpoint"\|"status"'
+
+================================================================================
+2. REGISTER wM DEVELOPER PORTAL (webMethods DevPortal)
+================================================================================
+
+Internal FQDN:  https://devportal.apic.svc
+  (canonical ClusterIP service on port 443 — cert SAN covers devportal.apic.svc)
+
+IMPORTANT: Management plane connects to devportal.apic.svc:443 for mTLS.
+The portal-api-admin-default TLS client profile contains:
+  - Keystore: portal-admin-client cert (signed by ingress-ca) for mTLS
+  - Truststore: ingress-ca (trusts devportal's server cert)
+
+UI Steps:
+  1. Cloud Manager → Topology → Infrastructure → Portal Services
+  2. "Register Service"
+  3. Title: webMethods Developer Portal
+  4. Service endpoint: https://devportal.apic.svc
+  5. TLS Client Profile: portal-api-admin-default
+     (NOT internal-ca-trust — that profile has no client cert for mTLS)
+  6. Save → Status: Online
+
+Verify (API):
+curl -sk "https://api-apic.k8s.adp.example.com/api/orgs/admin/availability-zones/availability-zone-default/portal-services" \
+  -H "Authorization: Bearer $TOKEN" | python3 -m json.tool | grep '"name"\|"endpoint"\|"status"'
+
+TROUBLESHOOTING:
+  "400 No required SSL certificate" → Wrong TLS profile (no client cert). Use portal-api-admin-default.
+  "400 plain HTTP sent to HTTPS port" → Wrong TLS profile (truststore mismatch). Use portal-api-admin-default.
+  "503 TLS cert verify failed" → Server cert not trusted by profile's truststore.
+  "Hostname mismatch" → Wrong service endpoint URL. Check devportal-proxy cert SANs include apic.svc.
+
+  Debug:
+  # Verify devportal.apic.svc:443 cert SANs include devportal.apic.svc:
+  echo "" | openssl s_client -connect devportal.apic.svc:443 -servername devportal.apic.svc 2>/dev/null | openssl x509 -noout -subject -issuer -ext subjectAltName
+
+================================================================================
+3. REGISTER wM API GATEWAY
+================================================================================
+
+Internal FQDN:  https://wmapigw.apic.svc
+  (canonical ClusterIP service on port 443 — cert SAN covers wmapigw.apic.svc)
+
+UI Steps:
+  1. Cloud Manager → Topology → Infrastructure → Gateway Services
+  2. "Register Service"
+  3. Title: webMethods API Gateway
+  4. Gateway type: webMethods API Gateway
+  5. API endpoint base:   https://wmapigw.apic.svc
+  6. Management endpoint: https://wmapigw.apic.svc
+  7. TLS Client Profile: wmapigateway-mgmt-client-default
+  8. Save → Status: Online
+
+================================================================================
+4. REGISTER AI DATAPOWER GATEWAY
+================================================================================
+
+Internal FQDN:  https://ai-gateway.apic.svc
+  (canonical ClusterIP service on port 443 — cert SAN covers ai-gateway.apic.svc)
+
+UI Steps:
+  1. Cloud Manager → Topology → Infrastructure → Gateway Services
+  2. "Register Service"
+  3. Title: AI DataPower Gateway
+  4. Gateway type: DataPower API Gateway
+  5. API endpoint base:   https://ai-gateway.apic.svc
+  6. Management endpoint: https://ai-gateway.apic.svc
+  7. TLS Client Profile: gateway-management-client-default
+  8. Save → Status: Online
+
+================================================================================
+POST-REGISTRATION: VERIFY ALL SERVICES
+================================================================================
+
+# Check all services are Online via API
+echo "=== Analytics Services ==="
+curl -sk "https://api-apic.k8s.adp.example.com/api/orgs/admin/availability-zones/availability-zone-default/analytics-services" \
+  -H "Authorization: Bearer $TOKEN" | python3 -m json.tool | grep '"title"\|"status"'
+
+echo "=== Gateway Services ==="
+curl -sk "https://api-apic.k8s.adp.example.com/api/orgs/admin/availability-zones/availability-zone-default/gateway-services" \
+  -H "Authorization: Bearer $TOKEN" | python3 -m json.tool | grep '"title"\|"status"'
+
+echo "=== Portal Services ==="
+curl -sk "https://api-apic.k8s.adp.example.com/api/orgs/admin/availability-zones/availability-zone-default/portal-services" \
+  -H "Authorization: Bearer $TOKEN" | python3 -m json.tool | grep '"title"\|"status"'
+
+# Full topology
+curl -sk "https://api-apic.k8s.adp.example.com/api/cloud/topology" \
+  -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
+
+================================================================================

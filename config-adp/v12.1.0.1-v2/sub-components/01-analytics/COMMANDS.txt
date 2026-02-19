@@ -1,0 +1,147 @@
+================================================================================
+SUB-COMPONENT: Analytics
+================================================================================
+CR Kind:     AnalyticsCluster
+CR Name:     analytics
+Namespace:   apic
+Endpoints:
+  Analytics Ingestion: https://ai-apic.k8s.adp.example.com
+
+PREREQUISITE: Core deployment (Management) must be Running.
+              Deploy Analytics BEFORE wM Developer Portal (DevPortal has analyticsRef).
+
+================================================================================
+REQUIRED SECRETS
+================================================================================
+
+# The analytics-ingestion-client mTLS cert is auto-created by cert-manager
+# from 04-ingress-issuer.yaml. Verify:
+kubectl get secret analytics-ingestion-client -n apic
+# If missing, re-apply: kubectl apply -f ../../core/02-prerequisites/04-ingress-issuer.yaml -n apic
+
+================================================================================
+DEPLOY
+================================================================================
+
+# 1. Deploy Analytics CR
+kubectl apply -f analytics-cr.yaml -n apic
+
+# 2. Watch status (ctrl+c when phase = Running, takes 10–15 min)
+kubectl get analyticscluster -n apic -w
+
+# 3. Monitor pods coming up
+kubectl get pods -n apic -l app.kubernetes.io/instance=analytics -w
+
+# 4. Apply HTTPProxy ingress
+kubectl apply -f ../../ingress/06-analytics-httpproxy.yaml
+
+# 5. Verify HTTPProxy
+kubectl get httpproxy -n apic analytics-ai-endpoint
+
+================================================================================
+GET-DEPLOYMENT STATUS
+================================================================================
+
+# Subsystem status
+kubectl get analyticscluster -n apic
+kubectl get analyticscluster analytics -n apic -o jsonpath='{.status.phase}'
+
+# Pod status
+kubectl get pods -n apic -l app.kubernetes.io/instance=analytics
+
+# Describe CR for full status
+kubectl describe analyticscluster analytics -n apic
+
+# Conditions (shows Warnings)
+kubectl get analyticscluster analytics -n apic -o jsonpath='{.status.conditions}' | python3 -m json.tool
+
+# HTTPProxy status
+kubectl get httpproxy -n apic analytics-ai-endpoint
+
+# Service endpoints
+kubectl get svc -n apic | grep analytics
+
+# Storage (PVCs)
+kubectl get pvc -n apic | grep analytics
+
+# TLS certificates
+kubectl get certificate -n apic | grep analytics
+kubectl get secret -n apic | grep analytics
+
+================================================================================
+DEBUG
+================================================================================
+
+# Analytics pod logs
+kubectl logs -n apic -l app.kubernetes.io/instance=analytics --tail=100
+
+# Specific analytics component logs
+kubectl logs -n apic -l app.kubernetes.io/name=mtls-gw,app.kubernetes.io/instance=analytics --tail=100
+kubectl logs -n apic -l app.kubernetes.io/name=storage,app.kubernetes.io/instance=analytics --tail=100
+kubectl logs -n apic -l app.kubernetes.io/name=message-queue,app.kubernetes.io/instance=analytics --tail=100
+
+# Describe pods for events
+kubectl describe pod -n apic -l app.kubernetes.io/instance=analytics
+
+# Check events
+kubectl get events -n apic --sort-by='.lastTimestamp' | grep -i analytics | tail -20
+
+# Test analytics ingestion endpoint (requires mTLS client cert)
+curl -sk --cert /tmp/analytics-client.crt --key /tmp/analytics-client.key \
+  https://ai-apic.k8s.adp.example.com/analytics/ready
+
+# Check analytics health from within cluster
+kubectl run debug-analytics --image=curlimages/curl --rm -it --restart=Never -- \
+  curl -sk https://analytics-mtls-gw.apic.svc:4443/analytics/ready
+
+# Exec into analytics pod
+kubectl exec -it -n apic \
+  $(kubectl get pod -n apic -l app.kubernetes.io/instance=analytics -o name | head -1) \
+  -- /bin/bash
+
+# Run system-check job manually (validates connectivity with management and devportal)
+kubectl create job \
+  --from=cronjob/$(kubectl get cronjob -n apic -o name | grep system-check | cut -d'/' -f2) \
+  analytics-system-check-manual-$(date +%s) -n apic
+# Then check logs:
+kubectl logs -n apic job/analytics-system-check-manual-* --tail=50
+
+================================================================================
+DESTROY
+================================================================================
+
+# 1. Delete HTTPProxy
+kubectl delete httpproxy analytics-ai-endpoint -n apic
+
+# 2. Delete Analytics CR
+kubectl delete analyticscluster analytics -n apic
+kubectl wait --for=delete analyticscluster analytics -n apic --timeout=600s
+
+# 3. Delete PVCs (analytics data will be lost!)
+kubectl delete pvc -n apic -l app.kubernetes.io/instance=analytics
+
+# 4. Verify cleanup
+kubectl get all -n apic -l app.kubernetes.io/instance=analytics
+kubectl get pvc -n apic | grep analytics
+
+================================================================================
+POST-DEPLOYMENT: REGISTER IN APIC CLOUD MANAGER
+================================================================================
+
+After deployment, register Analytics in Cloud Manager:
+1. Login to https://admin-apic.k8s.adp.example.com/admin
+2. Navigate to: Topology → Infrastructure → Analytics Services
+3. Click "Register Service"
+4. Fill in:
+   - Title: Analytics
+   - Ingestion endpoint: https://ai-apic.k8s.adp.example.com
+   - TLS Client Profile: analytics-ingestion-default
+5. Save and verify status shows "Online"
+
+Then associate with Gateway Service:
+1. Navigate to: Topology → Infrastructure → Gateway Services
+2. Select your gateway → Edit
+3. Set Analytics Service to "Analytics"
+4. Save
+
+================================================================================

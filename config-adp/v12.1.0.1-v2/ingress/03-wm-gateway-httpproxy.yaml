@@ -1,0 +1,36 @@
+---
+apiVersion: projectcontour.io/v1
+kind: HTTPProxy
+metadata:
+  name: wmapigw-mgmt
+  namespace: apic
+spec:
+  virtualhost:
+    fqdn: wmapigw-ui.apic.k8s.adp.example.com
+    tls:
+      secretName: wmapigw-mgmt-endpoint
+  routes:
+  - conditions:
+    - prefix: /
+    services:
+    - name: wmapigw-proxy
+      port: 4443
+      protocol: tls
+---
+apiVersion: projectcontour.io/v1
+kind: HTTPProxy
+metadata:
+  name: wmapigw-gateway
+  namespace: apic
+spec:
+  virtualhost:
+    fqdn: wmapigw.apic.k8s.adp.example.com
+    tls:
+      secretName: wmapigw-gateway-endpoint
+  routes:
+  - conditions:
+    - prefix: /
+    services:
+    - name: wmapigw
+      port: 443
+      protocol: tls

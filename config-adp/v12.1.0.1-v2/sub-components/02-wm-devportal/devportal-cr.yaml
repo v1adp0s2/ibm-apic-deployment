@@ -8,20 +8,20 @@ spec:
   profile: n1xc2.m4
   imagePullSecrets:
   - harbor-registry-secret
-  imageRegistry: harbor.talos.zebra-cloud.net/apic
+  imageRegistry: harbor.adp.example.com/apic
   devportalAdminEndpoint:
     ingressClassName: contour
     annotations:
       cert-manager.io/issuer: ingress-issuer
     hosts:
-    - name: admin-devportal-apic.demo01.mea-presales.org
+    - name: admin-devportal-apic.k8s.adp.example.com
       secretName: devportal-admin-endpoint
   devportalUIEndpoint:
     ingressClassName: contour
     annotations:
       cert-manager.io/issuer: ingress-issuer
     hosts:
-    - name: devportal-apic.demo01.mea-presales.org
+    - name: devportal-apic.k8s.adp.example.com
       secretName: devportal-ui-endpoint
   analyticsRef:
     name: analytics

@@ -1,0 +1,124 @@
+================================================================================
+IBM API CONNECT v12.1.0.1-v2 — START HERE
+================================================================================
+Environment:  k8s.adp.example.com  |  Talos Kubernetes  |  Contour Ingress
+Registry:     harbor.adp.example.com/apic
+Namespace:    apic
+Contour IP:   10.20.221.222
+
+================================================================================
+PACKAGE STRUCTURE
+================================================================================
+
+v12.1.0.1-v2/
+├── 00-START-HERE.txt               ← You are here
+├── 00-CONFIGURE.txt                ← How to adapt for a different environment
+│
+├── core/                           ← CORE DEPLOYMENT (deploy this first)
+│   ├── 01-operators/               │ API Connect + DataPower operators + CRDs
+│   ├── 02-prerequisites/           │ cert-manager issuers, IngressClass
+│   ├── 03-management/              │ Management Cluster CR
+│   ├── 04-gateway-datapower/       │ Core DataPower Gateway CR (gwv6) [NOT deployed]
+│   └── DEPLOY-CORE.txt             ← All core deployment commands
+│
+├── sub-components/                 ← OPTIONAL COMPONENTS (deploy after core)
+│   ├── 01-analytics/               │ Analytics
+│   │   ├── analytics-cr.yaml
+│   │   └── COMMANDS.txt            ← deploy/status/debug/destroy
+│   ├── 02-wm-devportal/            │ webMethods Developer Portal  ← needs Analytics
+│   │   ├── devportal-cr.yaml
+│   │   └── COMMANDS.txt
+│   ├── 03-wm-gateway/              │ webMethods API Gateway
+│   │   ├── wm-gateway-cr.yaml
+│   │   └── COMMANDS.txt
+│   └── 04-ai-gateway/              │ AI DataPower Gateway
+│       ├── ai-gateway-cr.yaml
+│       └── COMMANDS.txt
+│
+├── ingress/                        ← INGRESS RESOURCES (Contour HTTPProxy)
+│   ├── 01-management-httpproxy.yaml
+│   ├── 03-wm-gateway-httpproxy.yaml
+│   ├── 04-ai-gateway-httpproxy.yaml
+│   ├── 05-devportal-httpproxy.yaml
+│   └── 06-analytics-httpproxy.yaml
+│   └── COMMANDS.txt                ← All ingress commands
+│
+└── utilities/
+    ├── busybox/                    ← PVC cleanup tool
+    └── register-services/         ← Post-deployment service registration guide
+
+================================================================================
+DEPLOYMENT WORKFLOW
+================================================================================
+
+PHASE 1 — CORE (required)
+  ☐ Read core/DEPLOY-CORE.txt
+  ☐ Step 1: Create namespace & secrets
+  ☐ Step 2: Deploy operators (01-operators/)
+  ☐ Step 3: Deploy prerequisites (02-prerequisites/)
+  ☐ Step 4: Deploy Management (03-management/) — wait 15–30 min
+  ☐ Step 5: Apply core ingress (ingress/01-management-httpproxy.yaml)
+  ☐ Step 6: Verify core endpoints
+
+PHASE 2 — SUB-COMPONENTS (optional, deploy in this order)
+  ☐ 2a: Analytics           (sub-components/01-analytics/COMMANDS.txt)
+  ☐ 2b: wM Developer Portal (sub-components/02-wm-devportal/COMMANDS.txt)  ← needs Analytics
+  ☐ 2c: wM API Gateway      (sub-components/03-wm-gateway/COMMANDS.txt)
+  ☐ 2d: AI DataPower Gateway (sub-components/04-ai-gateway/COMMANDS.txt)
+  Apply corresponding ingress after each sub-component is Running.
+
+PHASE 3 — REGISTER SERVICES (in Cloud Manager Topology)
+  ☐ Read utilities/register-services/REGISTER-SERVICES.txt
+  ☐ Register Analytics
+  ☐ Register wM Developer Portal
+  ☐ Register wM API Gateway
+  ☐ Register AI DataPower Gateway
+
+================================================================================
+PREREQUISITES (must be already installed)
+================================================================================
+
+  ☐ Kubernetes cluster with kubectl configured
+  ☐ cert-manager installed and ready
+       kubectl get pods -n cert-manager
+  ☐ Contour installed and ready (LoadBalancer IP = 10.20.221.222)
+       kubectl get svc envoy -n projectcontour
+  ☐ Harbor registry accessible with all APIC images
+       harbor.adp.example.com/apic
+  ☐ NFS storage class "nfs-ssd" available
+       kubectl get storageclass nfs-ssd
+  ☐ DNS wildcard: *.k8s.adp.example.com → 10.20.221.222
+
+================================================================================
+QUICK COMMAND REFERENCE
+================================================================================
+
+# Check everything at once
+kubectl get managementcluster,wmapigatewaycluster,analyticscluster,devportalcluster -n apic
+kubectl get pods -n apic
+kubectl get httpproxy -n apic
+
+# Get Contour LoadBalancer IP
+kubectl get svc envoy -n projectcontour -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+
+# Get admin password
+kubectl get secret management-admin-secret -n apic \
+  -o jsonpath='{.data.password}' | base64 -d && echo
+
+# Access Cloud Manager
+# https://admin-apic.k8s.adp.example.com/admin
+# Default: admin / Admin123!
+
+================================================================================
+VERSION INFO
+================================================================================
+
+Package:          v12.1.0.1-v2
+API Connect:      12.1.0.1
+Operator:         12.1.0.1
+DataPower:        12.1.0.1
+Contour:          v1.33.1
+cert-manager:     v1.13.2+
+Created:          2026-02-19
+
+================================================================================

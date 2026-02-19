@@ -1,0 +1,141 @@
+================================================================================
+IBM API CONNECT v12.1.0.1-v2 — CONFIGURATION GUIDE
+================================================================================
+This package is pre-configured for:
+  Domain:    k8s.adp.example.com
+  Namespace: apic
+  Registry:  harbor.adp.example.com/apic
+  Storage:   nfs-ssd
+  Ingress:   contour
+
+To adapt for a different environment, replace these values throughout:
+
+================================================================================
+ENVIRONMENT VALUES TO CHANGE
+================================================================================
+
+Current Value                           → Replace With
+──────────────────────────────────────────────────────────────────────────────
+k8s.adp.example.com                 → your DNS domain
+harbor.adp.example.com/apic       → your registry/project
+harbor-registry-secret                  → your registry pull secret name
+nfs-ssd                                 → your storage class
+apic                                    → your namespace (if different)
+
+================================================================================
+ONE-LINER REPLACEMENT COMMANDS
+================================================================================
+
+# Set your environment variables first:
+export NEW_DOMAIN="your.domain.com"
+export NEW_REGISTRY="your-registry.example.com/apic"
+export NEW_STORAGE="your-storage-class"
+export NEW_NAMESPACE="apic"
+
+# Run all replacements (from the v12.1.0.1-v2/ directory):
+find . -type f \( -name "*.yaml" -o -name "*.txt" \) \
+  -not -path "*/busybox/*" \
+  -exec sed -i \
+    -e "s/demo01\.mea-presales\.org/$NEW_DOMAIN/g" \
+    -e "s|harbor\.talos\.zebra-cloud\.net/apic|$NEW_REGISTRY|g" \
+    -e "s/nfs-ssd/$NEW_STORAGE/g" \
+  {} \;
+
+# Verify no old domain remains
+grep -r "k8s.adp.example.com" . --include="*.yaml" --include="*.txt" | grep -v ".bak"
+
+# Verify registry updated
+grep -r "harbor.talos" . --include="*.yaml" | grep -v ".bak"
+
+================================================================================
+KEY CONFIGURATION FILES
+================================================================================
+
+core/03-management/06-management-cr.yaml
+  - imageRegistry: harbor.adp.example.com/apic
+  - cloudManagerEndpoint.hosts[].name: admin-apic.k8s.adp.example.com
+  - apiManagerEndpoint.hosts[].name: manager-apic.k8s.adp.example.com
+  - platformAPIEndpoint.hosts[].name: api-apic.k8s.adp.example.com
+  - consumerAPIEndpoint.hosts[].name: consumer-apic.k8s.adp.example.com
+  - consumerCatalogEndpoint.hosts[].name: consumer-catalog-apic.k8s.adp.example.com
+  - databaseVolumeClaimTemplate.storageClassName: nfs-ssd
+
+sub-components/03-wm-gateway/wm-gateway-cr.yaml
+  - imageRegistry: harbor.adp.example.com/apic
+  - gatewayEndpoint.hosts[].name: wmapigw.apic.k8s.adp.example.com
+  - mgmtEndpoint.hosts[].name: wmapigw-ui.apic.k8s.adp.example.com
+  - storage.volumeClaimTemplate.storageClassName: nfs-ssd
+
+sub-components/04-ai-gateway/ai-gateway-cr.yaml
+  - imageRegistry: harbor.adp.example.com/apic
+  - gatewayEndpoint.hosts[].name: ai-rgw-apic.k8s.adp.example.com
+  - gatewayManagerEndpoint.hosts[].name: ai-rgwd-apic.k8s.adp.example.com
+  - tokenManagementService.storage.storageClassName: nfs-ssd
+
+sub-components/02-wm-devportal/devportal-cr.yaml
+  - imageRegistry: harbor.adp.example.com/apic
+  - devportalAdminEndpoint.hosts[].name: admin-devportal-apic.k8s.adp.example.com
+  - devportalUIEndpoint.hosts[].name: devportal-apic.k8s.adp.example.com
+  - analyticsRef.namespace: apic
+
+sub-components/01-analytics/analytics-cr.yaml
+  - imageRegistry: harbor.adp.example.com/apic
+  - ingestion.endpoint.hosts[].name: ai-apic.k8s.adp.example.com
+  - storage.shared.volumeClaimTemplate.storageClassName: nfs-ssd
+
+ingress/*.yaml
+  - All fqdn: fields use k8s.adp.example.com
+
+================================================================================
+REQUIRED SECRETS (must create manually)
+================================================================================
+
+# Registry pull secret
+kubectl create secret docker-registry harbor-registry-secret \
+  --namespace=apic \
+  --docker-server=harbor.adp.example.com \
+  --docker-username=admin \
+  --docker-password=<PASSWORD>
+
+# DataPower admin (used by ai-gateway)
+kubectl create secret generic datapower-admin-credentials \
+  --namespace=apic --from-literal=password=admin
+
+# Management admin password
+kubectl create secret generic management-admin-secret \
+  --namespace=apic --from-literal=password=Admin123!
+
+# wM Gateway encryption key
+kubectl create secret generic wmapigateway-enc-key \
+  --namespace=apic --from-literal=encryptionKey=$(openssl rand -base64 32)
+
+# wM Gateway admin
+kubectl create secret generic wmapigateway-admin-secret \
+  --namespace=apic --from-literal=password=manage
+
+# DevPortal encryption key
+kubectl create secret generic devportal-enc-key \
+  --namespace=apic --from-literal=encryptionKey=$(openssl rand -base64 32)
+
+================================================================================
+DNS RECORDS REQUIRED
+================================================================================
+
+All DNS records point to Contour LoadBalancer IP (currently 10.20.221.222).
+Configure a wildcard: *.k8s.adp.example.com → 10.20.221.222
+
+Individual A records needed:
+  admin-apic.k8s.adp.example.com          → 10.20.221.222  (Cloud Manager)
+  manager-apic.k8s.adp.example.com         → 10.20.221.222  (API Manager)
+  api-apic.k8s.adp.example.com             → 10.20.221.222  (Platform API)
+  consumer-apic.k8s.adp.example.com        → 10.20.221.222  (Consumer API)
+  consumer-catalog-apic.k8s.adp.example.com→ 10.20.221.222  (Consumer Catalog)
+  wmapigw.apic.k8s.adp.example.com         → 10.20.221.222  (wM Gateway)
+  wmapigw-ui.apic.k8s.adp.example.com      → 10.20.221.222  (wM Gateway UI)
+  ai-rgw-apic.k8s.adp.example.com          → 10.20.221.222  (AI Gateway)
+  ai-rgwd-apic.k8s.adp.example.com         → 10.20.221.222  (AI Gateway Manager)
+  admin-devportal-apic.k8s.adp.example.com → 10.20.221.222  (DevPortal Admin)
+  devportal-apic.k8s.adp.example.com       → 10.20.221.222  (DevPortal UI)
+  ai-apic.k8s.adp.example.com              → 10.20.221.222  (Analytics)
+
+================================================================================

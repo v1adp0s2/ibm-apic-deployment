@@ -1,0 +1,77 @@
+apiVersion: management.apiconnect.ibm.com/v1beta1
+kind: ManagementCluster
+metadata:
+  name: management
+  namespace: apic
+spec:
+  version: 12.1.0.1
+  imagePullSecrets:
+  - harbor-registry-secret
+  imageRegistry: harbor.adp.example.com/apic
+  profile: n1xc4.m16
+  portal:
+    admin:
+      secretName: portal-admin-client
+  analytics:
+    ingestion:
+      secretName: analytics-ingestion-client
+  gateway:
+    client:
+      secretName: gateway-client-client
+  devPortal:
+    admin:
+      secretName: devportal-admin-client
+  wmAPIGateway:
+    mgmt:
+      secretName: wmapigateway-mgmt-client
+  nanoGateway:
+    mgmt:
+      secretName: nano-gateway-mgmt-client
+  federatedAPIManagement:
+    admin:
+      secretName: federatedapimanagement-admin-client
+  cloudManagerEndpoint:
+    ingressClassName: contour
+    annotations:
+      cert-manager.io/issuer: ingress-issuer
+    hosts:
+    - name: admin-apic.k8s.adp.example.com
+      secretName: cm-endpoint
+  apiManagerEndpoint:
+    ingressClassName: contour
+    annotations:
+      cert-manager.io/issuer: ingress-issuer
+    hosts:
+    - name: manager-apic.k8s.adp.example.com
+      secretName: apim-endpoint
+  consumerCatalogEndpoint:
+    ingressClassName: contour
+    annotations:
+      cert-manager.io/issuer: ingress-issuer
+    hosts:
+    - name: consumer-catalog-apic.k8s.adp.example.com
+      secretName: consumer-catalog-endpoint
+  platformAPIEndpoint:
+    ingressClassName: contour
+    annotations:
+      cert-manager.io/issuer: ingress-issuer
+    hosts:
+    - name: api-apic.k8s.adp.example.com
+      secretName: api-endpoint
+  consumerAPIEndpoint:
+    ingressClassName: contour
+    annotations:
+      cert-manager.io/issuer: ingress-issuer
+    hosts:
+    - name: consumer-apic.k8s.adp.example.com
+      secretName: consumer-endpoint
+  databaseVolumeClaimTemplate:
+    storageClassName: nfs-ssd
+  microServiceSecurity: certManager
+  certManagerIssuer:
+    name: selfsigning-issuer
+    kind: Issuer
+  license:
+    accept: true
+    use: nonproduction
+    license: L-SBZZ-CNR329

@@ -1,0 +1,100 @@
+---
+# Cloud Manager
+apiVersion: projectcontour.io/v1
+kind: HTTPProxy
+metadata:
+  name: management-admin
+  namespace: apic
+spec:
+  virtualhost:
+    fqdn: admin-apic.k8s.adp.example.com
+    tls:
+      secretName: cm-endpoint
+  routes:
+  - services:
+    - name: management-juhu
+      port: 2005
+      protocol: tls
+      validation:
+        caSecret: management-ca
+        subjectName: management-juhu.apic.svc.cluster.local
+---
+# API Manager
+apiVersion: projectcontour.io/v1
+kind: HTTPProxy
+metadata:
+  name: management-api-manager
+  namespace: apic
+spec:
+  virtualhost:
+    fqdn: manager-apic.k8s.adp.example.com
+    tls:
+      secretName: apim-endpoint
+  routes:
+  - services:
+    - name: management-juhu
+      port: 2006
+      protocol: tls
+      validation:
+        caSecret: management-ca
+        subjectName: management-juhu.apic.svc.cluster.local
+---
+# Platform API
+apiVersion: projectcontour.io/v1
+kind: HTTPProxy
+metadata:
+  name: management-platform-api
+  namespace: apic
+spec:
+  virtualhost:
+    fqdn: api-apic.k8s.adp.example.com
+    tls:
+      secretName: api-endpoint
+  routes:
+  - services:
+    - name: management-juhu
+      port: 2000
+      protocol: tls
+      validation:
+        caSecret: management-ca
+        subjectName: management-juhu.apic.svc.cluster.local
+---
+# Consumer API
+apiVersion: projectcontour.io/v1
+kind: HTTPProxy
+metadata:
+  name: management-consumer-api
+  namespace: apic
+spec:
+  virtualhost:
+    fqdn: consumer-apic.k8s.adp.example.com
+    tls:
+      secretName: consumer-endpoint
+  routes:
+  - services:
+    - name: management-juhu
+      port: 2001
+      protocol: tls
+      validation:
+        caSecret: management-ca
+        subjectName: management-juhu.apic.svc.cluster.local
+---
+# Consumer Catalog
+apiVersion: projectcontour.io/v1
+kind: HTTPProxy
+metadata:
+  name: management-consumer-catalog
+  namespace: apic
+spec:
+  virtualhost:
+    fqdn: consumer-catalog-apic.k8s.adp.example.com
+    tls:
+      secretName: consumer-catalog-endpoint
+  routes:
+  - services:
+    - name: management-juhu
+      port: 2013
+      protocol: tls
+      validation:
+        caSecret: management-ca
+        subjectName: management-juhu.apic.svc.cluster.local
