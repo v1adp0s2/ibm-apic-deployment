@@ -2,14 +2,14 @@
 apiVersion: projectcontour.io/v1
 kind: HTTPProxy
 metadata:
-  name: mailhog-web
+  name: maildev-web
   namespace: apic
 spec:
   virtualhost:
-    fqdn: mailhog-apic.talos-pc.zebra-cloud.net
+    fqdn: maildev-apic.talos-pc.zebra-cloud.net
   routes:
   - conditions:
     - prefix: /
     services:
-    - name: mailhog
-      port: 8025
+    - name: maildev
+      port: 1080

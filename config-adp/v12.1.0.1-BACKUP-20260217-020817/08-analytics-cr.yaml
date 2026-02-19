@@ -1,0 +1,26 @@
+apiVersion: analytics.apiconnect.ibm.com/v1beta1
+kind: AnalyticsCluster
+metadata:
+  name: analytics
+  namespace: NAMESPACE_PLACEHOLDER
+spec:
+  version: 12.1.0.1
+  profile: n3xc14.m48
+  imagePullSecrets:
+  - REGISTRY_SECRET_PLACEHOLDER
+  imageRegistry: REGISTRY_PLACEHOLDER
+  analyticsIngestionEndpoint:
+    ingressClassName: INGRESS_CLASS_PLACEHOLDER
+    annotations:
+      cert-manager.io/issuer: ingress-issuer
+    hosts:
+    - name: ai.DNS_PLACEHOLDER
+      secretName: analytics-ai-endpoint
+  storage:
+    data:
+      storageClassName: STORAGE_CLASS_PLACEHOLDER
+      volumeSize: 200Gi
+  license:
+    accept: true
+    use: nonproduction
+    license: L-SBZZ-CNR329

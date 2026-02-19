@@ -1,0 +1,44 @@
+apiVersion: portal.apiconnect.ibm.com/v1beta1
+kind: PortalCluster
+metadata:
+  name: portal
+  namespace: NAMESPACE_PLACEHOLDER
+spec:
+  version: 12.1.0.1
+  profile: n3xc4.m12
+  imagePullSecrets:
+  - REGISTRY_SECRET_PLACEHOLDER
+  imageRegistry: REGISTRY_PLACEHOLDER
+  portalDirectorEndpoint:
+    ingressClassName: INGRESS_CLASS_PLACEHOLDER
+    annotations:
+      cert-manager.io/issuer: ingress-issuer
+    hosts:
+    - name: api.portal.DNS_PLACEHOLDER
+      secretName: portal-admin
+  portalWebEndpoint:
+    ingressClassName: INGRESS_CLASS_PLACEHOLDER
+    annotations:
+      cert-manager.io/issuer: ingress-issuer
+    hosts:
+    - name: portal.DNS_PLACEHOLDER
+      secretName: portal-web
+  databaseVolumeClaimTemplate:
+    storageClassName: STORAGE_CLASS_PLACEHOLDER
+    volumeSize: 50Gi
+  databaseLogVolumeClaimTemplate:
+    storageClassName: STORAGE_CLASS_PLACEHOLDER
+    volumeSize: 2Gi
+  adminStorageVolumeClaimTemplate:
+    storageClassName: STORAGE_CLASS_PLACEHOLDER
+    volumeSize: 5Gi
+  backupStorageVolumeClaimTemplate:
+    storageClassName: STORAGE_CLASS_PLACEHOLDER
+    volumeSize: 5Gi
+  wwwStorageVolumeClaimTemplate:
+    storageClassName: STORAGE_CLASS_PLACEHOLDER
+    volumeSize: 5Gi
+  license:
+    accept: true
+    use: nonproduction
+    license: L-SBZZ-CNR329

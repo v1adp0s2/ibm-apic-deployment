@@ -1,0 +1,334 @@
+================================================================================
+IBM API CONNECT v12.1.0.1 - DEPLOYMENT PACKAGE
+================================================================================
+
+Welcome! This package contains everything you need to deploy IBM API Connect
+v12.1.0.1 on Kubernetes with Contour ingress controller.
+
+================================================================================
+QUICK START - READ THESE FILES IN ORDER
+================================================================================
+
+1. README.md
+   ├─ Overview of the deployment package
+   ├─ Prerequisites checklist
+   ├─ Architecture overview
+   └─ Quick start guide
+
+2. PLACEHOLDERS-EXPLAINED.txt (READ THIS IF CONFUSED!)
+   ├─ Simple explanation of static vs dynamic placeholders
+   ├─ Visual workflow diagrams
+   ├─ When to replace which placeholders
+   └─ Quick reference and FAQ
+
+3. HARBOR-SETUP.md (REQUIRED - before configuration)
+   ├─ Harbor project setup
+   ├─ Upload API Connect images using apiconnect-image-tool
+   ├─ Manual upload methods (alternative)
+   ├─ Image verification
+   └─ Troubleshooting
+
+4. DNS-ENTRIES.txt (REQUIRED - cannot use wildcard DNS)
+   ├─ Complete list of all 10 required DNS entries
+   ├─ DNS entry purpose and usage
+   ├─ Individual DNS A record examples
+   └─ DNS verification commands
+
+5. 00-CONFIGURE.txt
+   ├─ Configuration replacement commands
+   ├─ Environment variable setup
+   ├─ One-liner sed commands to customize deployment
+   └─ MUST RUN BEFORE DEPLOYMENT
+
+6. DEPLOYMENT-GUIDE.txt
+   ├─ Step-by-step deployment commands
+   ├─ Copy-paste ready commands
+   ├─ Verification procedures
+   └─ Post-deployment configuration
+
+7. busybox/README.md (when needed)
+   ├─ PVC cleanup utility documentation
+   ├─ Database reset procedures
+   └─ Used for subsystem maintenance/reset
+
+================================================================================
+FILE STRUCTURE
+================================================================================
+
+Configuration Files:
+  00-START-HERE.txt             → This file (start here!)
+  PLACEHOLDERS-EXPLAINED.txt    → Explains static vs dynamic placeholders
+  HARBOR-SETUP.md               → Harbor registry setup and image upload
+  DNS-ENTRIES.txt               → Complete list of required DNS entries (10 total)
+  00-CONFIGURE.txt              → Configuration replacement commands
+  VERIFY-CONFIG.txt             → Verify configuration before deployment
+
+Operator Installation (Apply in order):
+  01-ibm-apiconnect-crds.yaml   → Custom Resource Definitions
+  02-ibm-apiconnect-operator.yaml → API Connect Operator
+  03-ibm-datapower-operator.yaml → DataPower Operator
+
+Prerequisites:
+  04-ingress-issuer.yaml        → cert-manager resources
+  09-contour-ingressclass.yaml  → IngressClass definition
+
+Subsystem Deployments:
+  05-management-cr.yaml         → Management Subsystem CR
+  06-apigateway-cr.yaml         → Gateway Subsystem CR
+  07-portal-cr.yaml             → Portal Subsystem CR
+  08-analytics-cr.yaml          → Analytics Subsystem CR
+
+HTTPProxy Resources (Contour routing):
+  10-httpproxy-management.yaml  → Management endpoints
+  11-httpproxy-gateway.yaml     → Gateway endpoints
+  12-httpproxy-portal.yaml      → Portal endpoints
+  13-httpproxy-analytics.yaml   → Analytics endpoint
+
+Documentation:
+  README.md                     → Main documentation
+  DEPLOYMENT-GUIDE.txt          → Deployment commands
+
+Utilities:
+  cert-manager/ (45 MB amd64 images included)
+    ├─ README.md                → cert-manager documentation
+    ├─ QUICK-START.txt          → Quick deployment reference
+    ├─ cert-manager-v1.13.2.yaml → cert-manager manifest (427KB)
+    └─ images/                  → Pre-downloaded images (tar.gz, amd64)
+        ├─ cert-manager-controller-v1.13.2.tar.gz (18 MB)
+        ├─ cert-manager-cainjector-v1.13.2.tar.gz (13 MB)
+        └─ cert-manager-webhook-v1.13.2.tar.gz (14 MB)
+
+  busybox/ (2.1 MB amd64 image included)
+    ├─ README.md                → Busybox documentation
+    ├─ busybox-dockerfile       → Dockerfile for busybox
+    ├─ clear-pvc-pod.yaml       → PVC cleanup pod manifest
+    └─ busybox-1.37.tar.gz      → Pre-downloaded image (2.1 MB, amd64)
+
+================================================================================
+DEPLOYMENT WORKFLOW
+================================================================================
+
+Phase 1: PREPARATION
+  ☐ Read README.md
+  ☐ Verify prerequisites (Kubernetes, cert-manager, Contour)
+  ☐ Load API Connect images to Harbor (see HARBOR-SETUP.md)
+    - Create Harbor project: apic
+    - Upload images using apiconnect-image-tool
+    - Verify ~40-50 images uploaded
+  ☐ Configure DNS entries (10 total - see DNS-ENTRIES.txt)
+
+Phase 2: CONFIGURATION
+  ☐ Open 00-CONFIGURE.txt
+  ☐ Set environment variables (namespace, DNS, registry, etc.)
+  ☐ Run sed replacement commands
+  ☐ Verify all PLACEHOLDER values replaced
+
+Phase 3: DEPLOYMENT
+  ☐ Open DEPLOYMENT-GUIDE.txt
+  ☐ Create namespace and secrets
+  ☐ Deploy cert-manager resources
+  ☐ Deploy operators
+  ☐ Deploy Management subsystem (15-30 min)
+  ☐ Deploy Gateway subsystem (5-10 min)
+  ☐ Deploy Portal subsystem (10-15 min)
+  ☐ Deploy Analytics subsystem (10-15 min)
+
+Phase 4: VERIFICATION
+  ☐ Check all subsystems are Running
+  ☐ Check all HTTPProxy resources are valid
+  ☐ Test all endpoints with curl
+  ☐ Login to Cloud Manager
+  ☐ Register Gateway, Portal, Analytics services
+
+Phase 5: POST-DEPLOYMENT
+  ☐ Change admin password
+  ☐ Create provider organization
+  ☐ Create catalog
+  ☐ Configure gateway service
+  ☐ Configure portal service
+  ☐ Configure analytics service
+
+================================================================================
+CONFIGURATION PLACEHOLDERS
+================================================================================
+
+Before deployment, you MUST replace these placeholders:
+
+STATIC PLACEHOLDERS (Replace BEFORE deployment in 00-CONFIGURE.txt):
+  NAMESPACE_PLACEHOLDER         → Your namespace (e.g., "apic")
+  DNS_PLACEHOLDER               → Your DNS domain (e.g., "adp.example.com")
+  INGRESS_CLASS_PLACEHOLDER     → Your ingress class (e.g., "contour")
+  STORAGE_CLASS_PLACEHOLDER     → Your storage class (e.g., "nfs-ssd")
+  REGISTRY_PLACEHOLDER          → Your registry (e.g., "harbor.example.com/apic")
+  REGISTRY_SECRET_PLACEHOLDER   → Your registry secret name
+
+DYNAMIC PLACEHOLDERS (Replace DURING/AFTER deployment):
+  PORTAL_WWW_SERVICE_PLACEHOLDER → Updated after Portal deploys (in DEPLOYMENT-GUIDE)
+  PVC_DATA_PLACEHOLDER          → Only for maintenance/reset (in busybox/README)
+  PVC_WAL_PLACEHOLDER           → Only for maintenance/reset (in busybox/README)
+
+IMPORTANT:
+- Static placeholders: Use 00-CONFIGURE.txt one-liner commands
+- Dynamic placeholders: Don't touch them now! Handled during deployment
+- See "DYNAMIC PLACEHOLDERS" section in 00-CONFIGURE.txt for details
+
+================================================================================
+DEPLOYMENT TIME ESTIMATES
+================================================================================
+
+Total deployment time: 45-75 minutes
+
+Breakdown:
+  Configuration:        5-10 minutes
+  Operators:           5 minutes
+  Management:          15-30 minutes
+  Gateway:             5-10 minutes
+  Portal:              10-15 minutes
+  Analytics:           10-15 minutes
+  Verification:        5 minutes
+
+================================================================================
+PREREQUISITES CHECKLIST
+================================================================================
+
+Kubernetes Cluster:
+  ☐ Kubernetes 1.24-1.30
+  ☐ Minimum 3 worker nodes
+  ☐ 24+ CPU cores total
+  ☐ 96GB+ RAM total
+  ☐ kubectl configured and working
+
+Pre-installed Components:
+  ☐ cert-manager v1.12+ installed
+    - Provided in cert-manager/ directory (v1.13.2)
+    - See cert-manager/QUICK-START.txt for deployment
+  ☐ Contour v1.28+ installed and configured
+    - Assumes Contour is already installed
+    - Contour installation not included (see Contour docs)
+  ☐ Contour namespace labeled for privileged pods
+  ☐ Contour LoadBalancer has external IP
+
+Storage:
+  ☐ StorageClass with dynamic provisioning
+  ☐ 500GB+ storage available
+  ☐ Supports ReadWriteOnce (RWO) volumes
+  ☐ Supports ReadWriteMany (RWX) volumes (for Portal)
+
+Container Registry:
+  ☐ Container registry accessible from cluster
+  ☐ All API Connect v12.1.0.1 images pushed to registry
+  ☐ Registry credentials configured
+
+DNS (see DNS-ENTRIES.txt for complete list):
+  ☐ 10 DNS entries configured (wildcard OR individual A records)
+  ☐ All hostnames resolve to LoadBalancer IP
+  ☐ DNS propagated and resolvable
+
+  Option 1: Wildcard DNS (recommended): *.yourdomain.com → LoadBalancer IP
+  Option 2: Individual entries: admin.yourdomain.com, manager.yourdomain.com, etc.
+
+Network:
+  ☐ Cluster can pull images from registry
+  ☐ Users can access LoadBalancer IP from browser
+  ☐ HTTPS/443 access allowed
+
+================================================================================
+IMPORTANT NOTES
+================================================================================
+
+1. LICENSE
+   - This configuration uses "nonproduction" license
+   - For production, update license.use field to "production" in all CRs
+   - License key: L-SBZZ-CNR329
+
+2. SECURITY
+   - Change default passwords immediately after deployment
+   - Use proper TLS certificates (not self-signed) for production
+   - Implement network policies
+   - Configure RBAC appropriately
+
+3. HIGH AVAILABILITY
+   - This is a basic deployment configuration
+   - For production HA, increase replica counts in CR files
+   - Use larger profiles (e.g., n3xc16.m48 for Management)
+
+4. STORAGE PERFORMANCE
+   - Management DB: Minimum 50 IOPS
+   - Analytics: Minimum 200 IOPS
+   - Consider using SSD-backed storage for better performance
+
+5. CONTOUR CONFIGURATION
+   - Contour must be configured with TLS passthrough enabled
+   - HTTPProxy resources require Contour's projectcontour.io API
+   - Standard Ingress resources don't support HTTPS backends in Contour
+
+6. DYNAMIC VALUES
+   - Some values are generated at deployment time:
+     * Portal www service name
+     * PostgreSQL cluster names
+     * PVC names
+   - These must be updated in relevant files after deployment
+
+================================================================================
+SUPPORT RESOURCES
+================================================================================
+
+IBM Documentation:
+  https://www.ibm.com/docs/en/api-connect/12.x
+
+IBM Community:
+  https://community.ibm.com/community/user/integration
+
+Kubernetes Documentation:
+  https://kubernetes.io/docs/
+
+Contour Documentation:
+  https://projectcontour.io/docs/
+
+cert-manager Documentation:
+  https://cert-manager.io/docs/
+
+================================================================================
+TROUBLESHOOTING
+================================================================================
+
+If you encounter issues:
+
+1. Check README.md "Troubleshooting" section
+2. Review DEPLOYMENT-GUIDE.txt "Troubleshooting" section
+3. Verify all prerequisites are met
+4. Ensure all placeholders are replaced
+5. Check Kubernetes events: kubectl get events -n <namespace>
+6. Check pod logs: kubectl logs -n <namespace> <pod-name>
+7. Check subsystem status: kubectl describe <subsystem> -n <namespace>
+
+Common Issues:
+  - ImagePullBackOff: Check registry secret and image availability
+  - HTTPProxy invalid: Check service names and ports
+  - Certificates not ready: Check cert-manager logs
+  - Pods pending: Check storage class and PVC status
+  - Subsystem stuck: Check operator logs and pod events
+
+================================================================================
+NEXT STEPS
+================================================================================
+
+1. Open README.md and read the full documentation
+2. Verify all prerequisites are met
+3. Open 00-CONFIGURE.txt and configure the deployment
+4. Open DEPLOYMENT-GUIDE.txt and follow deployment steps
+5. Access Cloud Manager and complete initial configuration
+
+================================================================================
+VERSION INFORMATION
+================================================================================
+
+Package Version:     1.0
+API Connect Version: 12.1.0.1
+Operator Version:    12.1.0.1-1591
+Contour Version:     v1.28+ (v1.33.1 recommended)
+cert-manager:        v1.12+ (v1.13.2 recommended)
+
+Last Updated:        2026-02-16
+
+================================================================================

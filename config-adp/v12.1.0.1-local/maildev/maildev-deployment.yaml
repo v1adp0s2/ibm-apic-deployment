@@ -2,35 +2,36 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: mailhog
+  name: maildev
   namespace: apic
   labels:
-    app: mailhog
+    app: maildev
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: mailhog
+      app: maildev
   template:
     metadata:
       labels:
-        app: mailhog
+        app: maildev
     spec:
       containers:
-      - name: mailhog
-        image: mailhog/mailhog:v1.0.1
+      - name: maildev
+        image: harbor.talos.zebra-cloud.net/apic/maildev:2.2.1
+        imagePullPolicy: IfNotPresent
         ports:
         - name: smtp
           containerPort: 1025
           protocol: TCP
         - name: http
-          containerPort: 8025
+          containerPort: 1080
           protocol: TCP
         env:
-        - name: MH_STORAGE
-          value: memory
-        - name: MH_HOSTNAME
-          value: mailhog.apic.svc.cluster.local
+        - name: MAILDEV_SMTP_PORT
+          value: "1025"
+        - name: MAILDEV_WEB_PORT
+          value: "1080"
         resources:
           requests:
             memory: "128Mi"
@@ -42,10 +43,10 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: mailhog
+  name: maildev
   namespace: apic
   labels:
-    app: mailhog
+    app: maildev
 spec:
   type: ClusterIP
   ports:
@@ -54,19 +55,19 @@ spec:
     targetPort: 1025
     protocol: TCP
   - name: http
-    port: 8025
-    targetPort: 8025
+    port: 1080
+    targetPort: 1080
     protocol: TCP
   selector:
-    app: mailhog
+    app: maildev
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: mailhog-smtp
+  name: maildev-smtp
   namespace: apic
   labels:
-    app: mailhog
+    app: maildev
 spec:
   type: ClusterIP
   ports:
@@ -75,4 +76,4 @@ spec:
     targetPort: 1025
     protocol: TCP
   selector:
-    app: mailhog
+    app: maildev

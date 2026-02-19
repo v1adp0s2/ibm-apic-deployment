@@ -1,0 +1,40 @@
+---
+# Portal Director (Admin API)
+apiVersion: projectcontour.io/v1
+kind: HTTPProxy
+metadata:
+  name: portal-portal-director
+  namespace: NAMESPACE_PLACEHOLDER
+spec:
+  virtualhost:
+    fqdn: api.portal.DNS_PLACEHOLDER
+    tls:
+      secretName: portal-admin
+  routes:
+  - services:
+    - name: portal-nginx
+      port: 4443
+      protocol: tls
+      validation:
+        caSecret: portal-ca
+        subjectName: portal-nginx.NAMESPACE_PLACEHOLDER.svc.cluster.local
+---
+# Portal Web (Developer Portal UI)
+apiVersion: projectcontour.io/v1
+kind: HTTPProxy
+metadata:
+  name: portal-portal-web
+  namespace: NAMESPACE_PLACEHOLDER
+spec:
+  virtualhost:
+    fqdn: portal.DNS_PLACEHOLDER
+    tls:
+      secretName: portal-web
+  routes:
+  - services:
+    - name: PORTAL_WWW_SERVICE_PLACEHOLDER
+      port: 4443
+      protocol: tls
+      validation:
+        caSecret: portal-ca
+        subjectName: PORTAL_WWW_SERVICE_PLACEHOLDER.NAMESPACE_PLACEHOLDER.svc.cluster.local

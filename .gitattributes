@@ -1,4 +1,4 @@
-*.tar.gz filter=lfs diff=lfs merge=lfs -text
 config-adp/v12.1.0.1-local/apic-toolkit/apic filter=lfs diff=lfs merge=lfs -text
+*.tar.gz filter=lfs diff=lfs merge=lfs -text
 *.zip filter=lfs diff=lfs merge=lfs -text
 config-adp/v12.1.0.1-local/apic-toolkit/apic !text !filter !merge !diff

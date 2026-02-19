@@ -1,0 +1,1 @@
+- when downloading the images to as file, always ask if i need amd64 or arm64. If amd64 is needed or both use `ssh int.demo` connection to download the image from docker then scp it to local directory
