@@ -408,3 +408,35 @@ spec:
       app.kubernetes.io/instance: "management"
       app.kubernetes.io/managed-by: "ibm-apiconnect"
       app.kubernetes.io/name: "federatedapimanagement-admin-client"
+
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: consumer-endpoint
+  labels: {
+    app.kubernetes.io/instance: "management",
+    app.kubernetes.io/managed-by: "ibm-apiconnect",
+    app.kubernetes.io/name: "consumer-endpoint"
+  }
+spec:
+  subject:
+    organizations:
+      - cert-manager
+  commonName: consumer-endpoint
+  secretName: consumer-endpoint
+  issuerRef:
+    name: ingress-issuer
+  usages:
+    - "server auth"
+    - "digital signature"
+    - "key encipherment"
+  duration: 17520h # 2 years
+  renewBefore: 720h # 30 days
+  privateKey:
+    rotationPolicy: Always
+  secretTemplate:
+    labels:
+      app.kubernetes.io/instance: "management"
+      app.kubernetes.io/managed-by: "ibm-apiconnect"
+      app.kubernetes.io/name: "consumer-endpoint"

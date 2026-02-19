@@ -1,0 +1,26 @@
+================================================================================
+APIC PACKAGE DEPLOYMENT LOG
+================================================================================
+Package:    v12.1.0.1-v3
+Description: IBM API Connect v12.1.0.1 on Kubernetes (8 phases)
+Date/Time:  2026-02-19 19:37:59
+Cluster:    admin@talos-proxmox-cluster
+Namespace:  ibm-apic
+================================================================================
+
+PREREQUISITES CHECK
+===================
+
+1. Checking cert-manager pods...
+[PASS] cert-manager pods are Running
+
+2. Checking Contour LoadBalancer...
+[PASS] Contour LoadBalancer IP: 10.20.221.222
+
+3. Checking storage class nfs-ssd...
+[PASS] Storage class nfs-ssd exists
+
+4. Creating namespace ibm-apic...
+[EXISTS] Namespace ibm-apic already exists
+
+Prerequisites check completed successfully.

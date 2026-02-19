@@ -23,8 +23,8 @@ kubectl get secret analytics-ingestion-client -n ${APIC_NAMESPACE}
 DEPLOY
 ================================================================================
 
-# 1. Deploy Analytics CR
-kubectl apply -f analytics-cr.yaml -n ${APIC_NAMESPACE}
+# 1. Deploy Analytics CR (Note: devPortalMode is enabled by default)
+envsubst < analytics-cr.yaml.template | kubectl apply -f -
 
 # 2. Watch status (ctrl+c when phase = Running, takes 10–15 min)
 kubectl get analyticscluster -n ${APIC_NAMESPACE} -w

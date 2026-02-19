@@ -17,7 +17,7 @@ spec:
       protocol: tls
       validation:
         caSecret: management-ca
-        subjectName: management-juhu.apic.svc.cluster.local
+        subjectName: management-juhu.${APIC_NAMESPACE}.svc.cluster.local
 ---
 # API Manager
 apiVersion: projectcontour.io/v1
@@ -37,7 +37,7 @@ spec:
       protocol: tls
       validation:
         caSecret: management-ca
-        subjectName: management-juhu.apic.svc.cluster.local
+        subjectName: management-juhu.${APIC_NAMESPACE}.svc.cluster.local
 ---
 # Platform API
 apiVersion: projectcontour.io/v1
@@ -57,7 +57,7 @@ spec:
       protocol: tls
       validation:
         caSecret: management-ca
-        subjectName: management-juhu.apic.svc.cluster.local
+        subjectName: management-juhu.${APIC_NAMESPACE}.svc.cluster.local
 ---
 # Consumer API
 apiVersion: projectcontour.io/v1
@@ -77,7 +77,7 @@ spec:
       protocol: tls
       validation:
         caSecret: management-ca
-        subjectName: management-juhu.apic.svc.cluster.local
+        subjectName: management-juhu.${APIC_NAMESPACE}.svc.cluster.local
 ---
 # Consumer Catalog
 apiVersion: projectcontour.io/v1
@@ -97,4 +97,4 @@ spec:
       protocol: tls
       validation:
         caSecret: management-ca
-        subjectName: management-juhu.apic.svc.cluster.local
+        subjectName: management-juhu.${APIC_NAMESPACE}.svc.cluster.local

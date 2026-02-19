@@ -1,0 +1,15 @@
+---
+apiVersion: projectcontour.io/v1
+kind: HTTPProxy
+metadata:
+  name: maildev-web
+  namespace: ${APIC_NAMESPACE}
+spec:
+  virtualhost:
+    fqdn: maildev-apic.${APIC_DOMAIN_BASE}
+  routes:
+  - conditions:
+    - prefix: /
+    services:
+    - name: maildev
+      port: 1080

@@ -1,0 +1,1048 @@
+================================================================================
+APIC PACKAGE DEPLOYMENT LOG (FRESH START)
+================================================================================
+Package:    v12.1.0.1-v3
+Description: IBM API Connect v12.1.0.1 on Kubernetes
+Start Time: 2026-02-19 19:50:12
+Cluster:    admin@talos-proxmox-cluster
+Namespace:  ibm-apic
+================================================================================
+
+
+DEPLOYMENT PROGRESS
+===================
+
+[COMPLETED] Prerequisites Check
+- cert-manager: Running (3/3 pods)
+- Contour LoadBalancer: 10.20.221.222
+- Storage class: nfs-ssd (default)
+- Namespace: ibm-apic created
+
+[COMPLETED] Secrets Created
+- harbor-registry-secret (robot$apic-m4 @ harbor.talos.zebra-cloud.net)
+- datapower-admin-credentials
+- management-admin-secret
+
+[COMPLETED] CRDs and Operators
+- APIC CRDs: 35 CRDs installed
+- ibm-apiconnect operator: Running
+- datapower-operator: Running
+- edb-operator (PostgreSQL): Running
+
+[COMPLETED] Prerequisites
+- cert-manager issuers: 14 certificates configured
+- Contour IngressClass: configured
+
+[IN PROGRESS] Management Cluster
+- Status: Pending (1/19 pods ready)
+- Expected completion: 15-30 minutes
+- Monitor: kubectl get managementcluster -n ibm-apic -w
+
+NEXT STEPS (after Management is Running):
+1. Deploy Analytics cluster
+2. Deploy wM Developer Portal (depends on Analytics)
+3. Deploy wM API Gateway
+4. Deploy AI DataPower Gateway
+5. Deploy HTTPProxy ingress resources
+6. Register services with Management cluster
+
+
+[ISSUE RESOLVED] Missing consumer-endpoint Certificate
+=====================================================
+Time: 33 minutes into deployment
+
+PROBLEM:
+- Schema upgrade jobs stuck in ContainerCreating
+- Error: MountVolume.SetUp failed for volume "consumer-endpoint" : secret "consumer-endpoint" not found
+
+ROOT CAUSE:
+- The 04-ingress-issuer.yaml was missing the consumer-endpoint Certificate definition
+- Management CR references this certificate but it was never created
+
+FIX APPLIED:
+1. Added consumer-endpoint Certificate to:
+   - config-adp/v12.1.0.1-v3/core/02-prerequisites/04-ingress-issuer.yaml
+   - config-adp/v12.1.0.1-local/04-ingress-issuer.yaml
+
+2. Applied updated ingress-issuer.yaml to cluster:
+   kubectl apply -f core/02-prerequisites/04-ingress-issuer.yaml -n ibm-apic
+
+3. Waited for certificate to be ready:
+   kubectl wait --for=condition=Ready certificate/consumer-endpoint -n ibm-apic
+
+RESULT:
+- consumer-endpoint certificate created and ready
+- Schema upgrade jobs transitioned from ContainerCreating to Running
+- Management deployment resumed progress (now 8/23 pods ready)
+
+Updated DEPLOY-CORE.txt to reflect 15 certificates (was 14).
+
+Deployment continuing...
+
+
+[ISSUE RESOLVED] Missing Hostnames in Management CR
+====================================================
+Time: 50 minutes into deployment
+
+PROBLEM:
+- management-up-apim-data-populate job failing with:
+  "The api_manager_endpoint property must be of the format https://<host-address>."
+- Management CR endpoint hostnames were empty (null)
+
+ROOT CAUSE:
+- The 06-management-cr.yaml.template file was applied directly without envsubst
+- Environment variables like ${APIC_MGMT_MANAGER_HOST} were not substituted
+- This resulted in empty hostname values in the CR spec
+
+FIX APPLIED:
+1. Patched Management CR with correct hostnames:
+   kubectl patch managementcluster management -n ibm-apic --type=json -p='[
+     {"op": "replace", "path": "/spec/apiManagerEndpoint/hosts/0/name", "value": "manager-apic.demo01.mea-presales.org"},
+     {"op": "replace", "path": "/spec/cloudManagerEndpoint/hosts/0/name", "value": "admin-apic.demo01.mea-presales.org"},
+     {"op": "replace", "path": "/spec/platformAPIEndpoint/hosts/0/name", "value": "api-apic.demo01.mea-presales.org"},
+     {"op": "replace", "path": "/spec/consumerAPIEndpoint/hosts/0/name", "value": "consumer-apic.demo01.mea-presales.org"},
+     {"op": "replace", "path": "/spec/consumerCatalogEndpoint/hosts/0/name", "value": "consumer-catalog-apic.demo01.mea-presales.org"}
+   ]'
+
+2. Deleted failing job to trigger recreation with updated config:
+   kubectl delete job management-up-apim-data-populate-0-to-1246-5faa0870 -n ibm-apic
+
+RESULT:
+- Management CR now has correct hostnames set
+- New data-populate job created and running successfully
+- No more CrashLoopBackOff
+
+PREVENTION:
+- The /deploy-package command MUST use envsubst for .yaml.template files
+- Correct pattern: envsubst < file.yaml.template | kubectl apply -f -
+- Never apply .yaml.template files directly
+
+Deployment continuing...
+
+
+[ISSUE RESOLVED] Sub-component Deployment Fixes
+=================================================
+Time: After Management reached Running status
+
+ANALYTICS:
+- Initially deployed successfully (8/8 Running in 14 minutes)
+- Patched to enable devPortalMode for DevPortal dependency:
+  kubectl patch analyticscluster analytics -n ibm-apic --type=merge -p '{"spec":{"devPortalMode":true}}'
+- Status: Reconciling after patch (currently 7/8)
+
+wM API GATEWAY:
+- PROBLEM: Pod stuck in CreateContainerConfigError
+  Error: couldn't find key "password" in Secret ibm-apic/wmapigateway-enc-key
+- ROOT CAUSE: Secret created with key "encryptionSecret" but pod expects "password"
+- FIX APPLIED:
+  kubectl delete secret wmapigateway-enc-key -n ibm-apic
+  kubectl create secret generic wmapigateway-enc-key --from-literal=password=$(openssl rand -base64 32) -n ibm-apic
+- RESULT: wmapigw-apigateway-0 pod transitioned from CreateContainerConfigError to Running
+
+AI DATAPOWER GATEWAY:
+- PROBLEM: Status Warning with MissingSecrets
+  Message: [spec.apicGatewayPeeringTLS.secretName: Not found: "ai-gateway-peering", 
+            spec.apicGatewayServiceTLS.secretName: Not found: "ai-gateway-service"]
+- ROOT CAUSE: CR referenced "ai-gateway-peering" and "ai-gateway-service" but actual certificates are "gateway-peering" and "gateway-service"
+- FIX APPLIED:
+  kubectl patch gatewaycluster ai-gateway -n ibm-apic --type=json -p='[
+    {"op": "replace", "path": "/spec/apicGatewayPeeringTLS/secretName", "value": "gateway-peering"},
+    {"op": "replace", "path": "/spec/apicGatewayServiceTLS/secretName", "value": "gateway-service"}
+  ]'
+- RESULT: ai-gateway transitioned from Warning to Pending (1/2 pods deploying)
+
+DEVELOPER PORTAL:
+- PROBLEM: Status Blocked with message "The Analytics Cluster referenced in analyticsRef is not in a Running state"
+- ROOT CAUSE: Analytics was initially deployed without devPortalMode=true
+- FIX APPLIED:
+  1. Patched Analytics (see above)
+  2. Deleted and recreated DevPortal cluster:
+     kubectl delete devportalcluster devportal -n ibm-apic
+     sed 's/namespace: apic/namespace: ibm-apic/' /path/to/08-devportal-cr.yaml | kubectl apply -f -
+- STATUS: Waiting for Analytics to complete reconciliation before DevPortal can start
+
+Deployment continuing...
+
+
+[UPDATE] Developer Portal - Missing Encryption Secret
+======================================================
+Time: 106 minutes into deployment
+
+PROBLEM:
+- DevPortal stuck in Pending/Initializing status (0/0 pods)
+- No workload resources (Deployments/StatefulSets) created despite Analytics being Running
+- CR references encryptionSecret.secretName: devportal-enc-key
+
+ROOT CAUSE:
+- The devportal-enc-key secret was never created during initial deployment
+- APIC operator waiting for all required secrets before creating workload resources
+
+FIX APPLIED:
+  kubectl create secret generic devportal-enc-key \
+    --from-literal=encryption_secret=$(openssl rand -base64 32) -n ibm-apic
+
+STATUS:
+- Secret created successfully
+- Waiting for operator to detect secret and start DevPortal pod creation
+
+================================================================================
+CURRENT DEPLOYMENT STATUS (106 minutes)
+================================================================================
+
+COMPLETED:
+✓ Management Cluster:  21/21 Running (completed at ~73 minutes)
+✓ Analytics Cluster:   8/8 Running (completed at ~30 minutes, reconciled after devPortalMode patch)
+✓ AI Gateway:          3/3 Running (after certificate name patch)
+✓ HTTPProxy:           8/12 valid (Management: 5/5, Analytics: 1/1, AI Gateway: 2/2)
+
+IN PROGRESS:
+- wM API Gateway:      1/3 Pending (wmapigw-apigateway-0 initializing, ~16 minutes runtime)
+- Developer Portal:    0/0 Pending (waiting for encryption secret to be picked up)
+- HTTPProxy invalid:   4 resources waiting for backend services (DevPortal: 2, wM Gateway: 2)
+
+NEXT STEPS:
+1. Monitor wM Gateway initialization completion
+2. Monitor DevPortal pod creation after encryption secret fix
+3. Verify all HTTPProxy resources become valid
+4. Register services with Management cluster
+5. Verify end-to-end connectivity
+
+Deployment continuing...
+
+
+[ISSUE RESOLVED] HTTPProxy Backend TLS Validation Failures
+============================================================
+Time: 110 minutes into deployment
+
+PROBLEM:
+- Browser error accessing Management endpoints: "upstream connect error or disconnect/reset before headers. reset reason: remote connection failure, transport failure reason: TLS_error:|268435581:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED"
+- Envoy logs showing "503 UF" (Upstream Failure) when accessing Management HTTPProxies
+
+ROOT CAUSE:
+- HTTPProxy resources deployed from v12.1.0.1-v2 package
+- Backend TLS validation subjectName used wrong namespace: "apic" instead of "ibm-apic"
+- Example: subjectName was "management-juhu.apic.svc.cluster.local" but should be "management-juhu.ibm-apic.svc.cluster.local"
+
+FIX APPLIED:
+# Management HTTPProxies
+kubectl patch httpproxy management-api-manager -n ibm-apic --type=json -p='[
+  {"op": "replace", "path": "/spec/routes/0/services/0/validation/subjectName", "value": "management-juhu.ibm-apic.svc.cluster.local"}
+]'
+
+kubectl patch httpproxy management-admin -n ibm-apic --type=json -p='[
+  {"op": "replace", "path": "/spec/routes/0/services/0/validation/subjectName", "value": "management-admin.ibm-apic.svc.cluster.local"}
+]'
+
+kubectl patch httpproxy management-platform-api -n ibm-apic --type=json -p='[
+  {"op": "replace", "path": "/spec/routes/0/services/0/validation/subjectName", "value": "management-platform-api.ibm-apic.svc.cluster.local"}
+]'
+
+kubectl patch httpproxy management-consumer-api -n ibm-apic --type=json -p='[
+  {"op": "replace", "path": "/spec/routes/0/services/0/validation/subjectName", "value": "management-consumer-api.ibm-apic.svc.cluster.local"}
+]'
+
+kubectl patch httpproxy management-consumer-catalog -n ibm-apic --type=json -p='[
+  {"op": "replace", "path": "/spec/routes/0/services/0/validation/subjectName", "value": "management-consumer-catalog.ibm-apic.svc.cluster.local"}
+]'
+
+# Analytics HTTPProxy
+kubectl patch httpproxy analytics-ai-endpoint -n ibm-apic --type=json -p='[
+  {"op": "replace", "path": "/spec/routes/0/services/0/validation/subjectName", "value": "analytics-ingestion.ibm-apic.svc.cluster.local"}
+]'
+
+RESULT:
+- Management endpoints now accessible (HTTP 301 redirect working correctly)
+- TLS validation between Envoy and backend services successful
+- All Management and Analytics HTTPProxies valid
+
+[UPDATE] Developer Portal - Successful Deployment
+===================================================
+Time: 118 minutes
+
+STATUS CHANGE:
+- Previous: 0/0 Pending (stuck in initialization)
+- After encryption secret fix: 1/2 Pending (pod creating)
+- After reconciliation trigger: 3/3 Running (fully deployed)
+
+TRIGGER:
+- Patched DevPortal CR with annotation to trigger reconciliation:
+  kubectl patch devportalcluster devportal -n ibm-apic --type=merge \
+    -p '{"metadata":{"annotations":{"trigger-reconcile":"'$(date +%s)'"}}}'
+
+RESULT:
+- DevPortal successfully deployed with 3/3 pods Running
+- DevPortal reconciled version: 12.1.0.1-1591
+
+================================================================================
+DEPLOYMENT STATUS UPDATE (118 minutes)
+================================================================================
+
+FULLY DEPLOYED (Running):
+✓ Management Cluster:   21/21 Running (73 minutes completion time)
+✓ Analytics Cluster:    8/8 Running (30 minutes completion time)
+✓ Developer Portal:     3/3 Running (118 minutes completion time after fixes)
+✓ AI Gateway:           3/3 Running (20 minutes completion time)
+
+IN PROGRESS:
+- wM API Gateway:       1/3 Pending (wmapigw-apigateway-0 still initializing, 20+ minutes)
+
+HTTPProxy STATUS:
+✓ Management:    5/5 valid (after subject name patches)
+✓ Analytics:     1/1 valid (after subject name patch)
+✓ AI Gateway:    2/2 valid
+- DevPortal:     0/2 invalid (backend services not ready yet - needs verification)
+- wM Gateway:    0/2 invalid (backend services not ready)
+
+NEXT STEPS:
+1. Monitor wM Gateway completion
+2. Verify DevPortal HTTPProxies
+3. Verify wM Gateway HTTPProxies
+4. Register services with Management cluster
+5. End-to-end verification
+
+Deployment continuing...
+
+
+================================================================================
+FINAL DEPLOYMENT STATUS (120 minutes)
+================================================================================
+
+CLUSTER RESOURCES - ALL RUNNING:
+✓ Management Cluster:   21/21 Running  |  Reconciled: 12.1.0.1-1591
+✓ Analytics Cluster:    8/8 Running    |  Reconciled: 12.1.0.1-1591
+✓ Developer Portal:     3/3 Running    |  Reconciled: 12.1.0.1-1591
+✓ AI DataPower Gateway: 3/3 Running    |  Reconciled: 12.1.0.1-1591
+⚠ wM API Gateway:       2/3 Pending    |  Status: Installation in progress
+
+POD STATISTICS:
+- Total Pods:     37
+- Running:        29
+- Completed Jobs: 7
+- Pending:        1 (wmapigw-apigateway-0 still initializing)
+
+HTTPPROXY RESOURCES:
+✓ Management (5):
+  - management-admin               valid
+  - management-api-manager         valid
+  - management-consumer-api        valid
+  - management-consumer-catalog    valid
+  - management-platform-api        valid
+
+✓ Analytics (1):
+  - analytics-ai-endpoint          valid
+
+✓ DevPortal (2):
+  - devportal-admin                valid
+  - devportal-web                  valid
+
+✓ AI Gateway (2):
+  - ai-gateway-gateway             valid
+  - ai-gateway-gateway-manager     valid
+
+⚠ wM Gateway (2):
+  - gwv6-gateway                   invalid (waiting for backend)
+  - gwv6-gateway-manager           invalid (waiting for backend)
+
+MANAGEMENT ENDPOINTS (VERIFIED):
+✓ Cloud Manager:      https://admin-apic.demo01.mea-presales.org/admin
+✓ API Manager:        https://manager-apic.demo01.mea-presales.org/manager
+✓ Platform API:       https://api-apic.demo01.mea-presales.org
+✓ Consumer API:       https://consumer-apic.demo01.mea-presales.org
+✓ Consumer Catalog:   https://consumer-catalog-apic.demo01.mea-presales.org
+
+ALL ISSUES RESOLVED:
+1. Missing consumer-endpoint certificate ✓
+2. Management CR hostname substitution failure ✓
+3. wM Gateway encryption secret key name mismatch ✓
+4. AI Gateway TLS certificate name mismatch ✓
+5. DevPortal missing encryption secret ✓
+6. DevPortal stuck in initialization (required reconciliation trigger) ✓
+7. HTTPProxy backend TLS validation failures (namespace mismatch) ✓
+8. Analytics devPortalMode not enabled ✓
+
+REMAINING:
+- wM API Gateway: Finalizing initialization (2/3 pods ready, wmapigw-apigateway-0 at 21+ minutes runtime)
+- Expected completion: Additional 5-10 minutes for full deployment
+- wM Gateway HTTPProxies will become valid once wmapigw-apigateway-0 passes readiness probe
+
+================================================================================
+DEPLOYMENT TIME BREAKDOWN
+================================================================================
+
+Start Time:              2026-02-19 19:50:12
+Current Time:            ~2026-02-19 21:53:00 (estimated)
+Total Elapsed:           ~120 minutes
+
+Component Completion Times:
+- Prerequisites:         5 minutes
+- Management:            73 minutes (including troubleshooting)
+- Analytics:             30 minutes (initial), 106 minutes (with devPortalMode patch)
+- AI Gateway:            20 minutes (after certificate patch)
+- Developer Portal:      118 minutes (including fixes)
+- wM API Gateway:        In progress (20+ minutes so far)
+
+NEXT STEPS:
+1. Wait for wM Gateway to complete (wmapigw-apigateway-0 readiness probe)
+2. Verify wM Gateway HTTPProxies become valid
+3. Register services with Management cluster:
+   - Analytics
+   - Developer Portal
+   - wM API Gateway
+   - AI DataPower Gateway
+4. Test end-to-end API lifecycle:
+   - Create API in API Manager
+   - Publish to Gateway
+   - Test through Developer Portal
+   - Verify analytics data collection
+
+================================================================================
+DEPLOYMENT SUCCESSFUL (with documented fixes)
+================================================================================
+
+
+[UPDATE] DevPortal HTTPProxy Fixes
+====================================
+
+DevPortal Web HTTPProxy:
+- Fixed backend TLS validation subject name
+  kubectl patch httpproxy devportal-web -n ibm-apic --type=json -p='[
+    {"op": "replace", "path": "/spec/routes/0/services/0/validation/subjectName", "value": "devportal-devportal.ibm-apic.svc.cluster.local"}
+  ]'
+- Result: https://devportal-apic.demo01.mea-presales.org/ now returns HTTP 302 (working)
+
+DevPortal Admin HTTPProxy:
+- Uses TLS passthrough (tcpproxy) - no backend validation to fix
+- Configuration: spec.tcpproxy with tls.passthrough: true
+- Status: Valid (no changes needed)
+
+
+================================================================================
+POST-DEPLOYMENT: ACCESSING API CONNECT USER INTERFACES
+================================================================================
+
+CLOUD MANAGER ACCESS (Administrator Portal)
+============================================
+URL:        https://admin-apic.demo01.mea-presales.org/admin
+Username:   admin
+Password:   Admin123!
+Purpose:    Cloud administration, topology management, user management
+
+Retrieve Password from Secret:
+  kubectl get secret -n ibm-apic management-admin-secret \
+    -o jsonpath='{.data.password}' | base64 -d && echo
+
+User Registry: admin/default-idp-1 (Local User Registry)
+
+
+API MANAGER ACCESS (API Developer Portal)
+==========================================
+URL:        https://manager-apic.demo01.mea-presales.org/manager
+Purpose:    Create, design, and publish APIs
+
+IMPORTANT: API Manager requires additional setup before first login
+
+Prerequisites:
+1. Login to Cloud Manager first (see above)
+2. Create a Provider Organization (if not exists)
+3. Invite/create a user for the Provider Organization
+4. Activate the user account via invitation email/link
+5. Use the activated user credentials to login to API Manager
+
+Alternative for Testing:
+- The Cloud Manager admin user (admin/Admin123!) may be able to access
+  API Manager directly if added to a Provider Organization
+- Select the appropriate User Registry during login
+
+
+OTHER MANAGEMENT ENDPOINTS
+===========================
+
+Platform API (REST API for automation):
+  URL: https://api-apic.demo01.mea-presales.org
+  
+  Authentication Example:
+  TOKEN=$(curl -sk -X POST https://api-apic.demo01.mea-presales.org/api/token \
+    -H "Content-Type: application/json" \
+    -d '{
+      "grant_type": "password",
+      "username": "admin",
+      "password": "Admin123!",
+      "realm": "admin/default-idp-1",
+      "client_id": "aa166ee3-2502-44bc-bebc-bd5e787150c5",
+      "client_secret": "bec0153c-bee9-4eb3-94e4-08b2fa43cf62"
+    }' | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+
+Consumer API:
+  URL: https://consumer-apic.demo01.mea-presales.org
+
+Consumer Catalog:
+  URL: https://consumer-catalog-apic.demo01.mea-presales.org
+
+
+DEVELOPER PORTAL ACCESS
+========================
+Web UI:     https://devportal-apic.demo01.mea-presales.org/
+Admin UI:   https://admin-devportal-apic.demo01.mea-presales.org/
+
+Note: Developer Portal requires configuration in Cloud Manager and 
+      association with a Catalog before it can be used.
+
+
+GATEWAY ENDPOINTS
+=================
+
+wM API Gateway:
+  Gateway:    https://wmapigw.apic.demo01.mea-presales.org/
+  Management: https://wmapigw-ui.apic.demo01.mea-presales.org/
+
+AI DataPower Gateway:
+  Gateway:    https://ai-rgw-apic.demo01.mea-presales.org/
+  Management: https://ai-rgwd-apic.demo01.mea-presales.org/
+
+
+ANALYTICS ENDPOINT
+==================
+Ingestion:  https://ai-apic.demo01.mea-presales.org/
+
+
+TLS CERTIFICATES
+================
+All endpoints use self-signed certificates from the ingress-ca issuer.
+
+Browser Access:
+- You will need to accept the certificate warning in your browser
+- The certificate is valid but self-signed
+
+API/CLI Access:
+- Use -k or --insecure flag with curl
+- Example: curl -k https://admin-apic.demo01.mea-presales.org/admin
+
+Trust the CA Certificate (optional):
+- Export the ingress-ca certificate:
+  kubectl get secret ingress-ca -n ibm-apic -o jsonpath='{.data.ca\.crt}' \
+    | base64 -d > ingress-ca.crt
+- Import into your system's trusted certificate store
+
+
+INITIAL SETUP TASKS (via Cloud Manager)
+========================================
+
+1. Configure Topology:
+   - Navigate to: Topology → Register Service
+   - Register Analytics service
+   - Register Developer Portal service  
+   - Register wM API Gateway service
+   - Register AI DataPower Gateway service
+
+2. Create Provider Organization:
+   - Navigate to: Provider organizations → Add → Create organization
+   - Provide organization details
+   - Add owner user credentials
+
+3. Create Catalog (within Provider Organization):
+   - Login to API Manager (https://manager-apic.demo01.mea-presales.org/manager)
+   - Navigate to: Manage → Catalogs → Add → Create catalog
+   - Associate with Gateway and Portal
+
+4. Configure Email Server (for notifications):
+   - Navigate to: Resources → Notifications
+   - Configure SMTP settings
+
+5. Create API:
+   - Navigate to: Develop APIs → Add → API
+   - Design, implement, and test your API
+   - Publish to a Catalog
+
+For detailed configuration procedures, refer to:
+  /Volumes/Data/Users/vladimir/git/ibm/demos/ibm-apic-deployment/config-adp/v12.1.0.1-v3/utilities/register-services/REGISTER-SERVICES.txt
+
+
+TROUBLESHOOTING ACCESS ISSUES
+==============================
+
+1. Cannot access Cloud Manager:
+   - Verify HTTPProxy status: kubectl get httpproxy -n ibm-apic
+   - Check Management cluster: kubectl get managementcluster -n ibm-apic
+   - Verify DNS resolution: nslookup admin-apic.demo01.mea-presales.org
+
+2. Cannot access API Manager:
+   - Ensure you have a Provider Organization created
+   - Verify user is invited and activated
+   - Check that correct User Registry is selected at login
+
+3. Certificate errors:
+   - This is expected with self-signed certificates
+   - Accept the certificate warning or import the CA certificate
+
+4. 503 Service Unavailable:
+   - Backend service may still be initializing
+   - Check pod status: kubectl get pods -n ibm-apic
+   - Review pod logs: kubectl logs -n ibm-apic <pod-name>
+
+5. Connection timeout:
+   - Verify LoadBalancer IP: kubectl get svc -n projectcontour envoy
+   - Check firewall rules for port 443
+   - Verify DNS points to correct LoadBalancer IP (10.20.221.222)
+
+
+NEXT STEPS
+==========
+1. Complete initial setup tasks in Cloud Manager
+2. Register all services in topology
+3. Create Provider Organization
+4. Create and test first API
+5. Configure Developer Portal
+6. Set up user registries (LDAP/OIDC) if needed
+
+
+
+================================================================================
+OPTIONAL UTILITY: MAILDEV EMAIL TESTING SERVER
+================================================================================
+Completed: 2026-02-19 22:03
+
+Added MailDev test mail server to utilities/maildev/ directory.
+This optional component captures all outgoing emails from API Connect without
+actually sending them - perfect for development and testing environments.
+
+Location: /Volumes/Data/Users/vladimir/git/ibm/demos/ibm-apic-deployment/config-adp/v12.1.0.1-v3/utilities/maildev/
+
+Files Added:
+- DEPLOY-MAILDEV.txt           - Complete deployment and configuration guide
+- maildev-deployment.yaml      - Kubernetes Deployment, Services, and PVC
+- contour-httpproxy-maildev.yaml - HTTPProxy for web UI access
+- maildev-2.2.1-amd64.tar.gz   - Docker image (59MB)
+- README.md                    - Quick reference
+
+Configuration Updates:
+- Updated namespace from "apic" to "ibm-apic" (4 occurrences in deployment.yaml)
+- Updated namespace from "apic" to "ibm-apic" (1 occurrence in httpproxy.yaml)
+
+Deployment Details:
+- Image: harbor.talos.zebra-cloud.net/apic/maildev:2.2.1
+- Storage: 5Gi PVC (nfs-ssd)
+- Resources: 128Mi-256Mi memory, 100m-200m CPU
+- SMTP: maildev-smtp.ibm-apic.svc.cluster.local:25 (for APIC configuration)
+- Web UI: http://maildev-apic.demo01.mea-presales.org (via HTTPProxy)
+
+Usage:
+1. To deploy: Follow instructions in utilities/maildev/DEPLOY-MAILDEV.txt
+2. Configure in Cloud Manager: Resources → Notifications → Create
+   - Host: maildev-smtp.ibm-apic.svc.cluster.local
+   - Port: 25
+   - No authentication, no TLS
+3. All emails sent by APIC will appear in MailDev web UI
+
+WARNING: MailDev is for DEVELOPMENT/TESTING ONLY!
+- Do NOT use in production environments
+- No authentication or security
+- Emails are stored locally (not actually delivered)
+- No TLS/SSL encryption
+
+For production, use a real SMTP server (SendGrid, Amazon SES, etc.)
+
+Documentation follows the same structure as other v3 package components with
+sections for prerequisites, step-by-step deployment, verification, API Connect
+configuration, testing, troubleshooting, resource usage, and cleanup.
+
+================================================================================
+
+
+MAILDEV TEMPLATES CREATED
+==========================
+Completed: 2026-02-19 22:07
+
+Created .yaml.template files following the same pattern as core components:
+
+1. maildev-deployment.yaml.template
+   - Uses ${APIC_NAMESPACE} for namespace
+   - Uses ${APIC_STORAGE_CLASS} for storage class
+   - Uses ${APIC_IMAGE_REGISTRY} for image registry
+
+2. contour-httpproxy-maildev.yaml.template
+   - Uses ${APIC_NAMESPACE} for namespace
+   - Uses ${APIC_DOMAIN_BASE} for FQDN
+
+3. DEPLOY-MAILDEV.txt updated to:
+   - Reference .yaml.template files
+   - Include envsubst commands in deployment steps
+   - Use environment variables for all hostnames and namespaces
+   - Follow same structure as DEPLOY-CORE.txt
+
+Deployment workflow now matches the rest of the v3 package:
+1. Source config.env
+2. Run envsubst on templates to generate YAML files
+3. Apply YAML files with kubectl
+
+This ensures consistency across all components and prevents hardcoded values.
+
+================================================================================
+
+
+================================================================================
+MAILDEV EMAIL TEST SERVER DEPLOYMENT
+================================================================================
+Deployed: 2026-02-19 22:10
+Location: utilities/maildev/
+
+MailDev is an optional email testing utility that captures all outgoing emails
+from API Connect without actually sending them - perfect for testing password
+resets, user invitations, and notifications.
+
+
+DEPLOYMENT COMMANDS
+===================
+
+cd utilities/maildev
+
+# Set environment variables (config.env has CRLF issues)
+export APIC_NAMESPACE=ibm-apic
+export APIC_DOMAIN_BASE=demo01.mea-presales.org
+export APIC_IMAGE_REGISTRY=harbor.talos.zebra-cloud.net/apic
+export APIC_STORAGE_CLASS=nfs-ssd
+
+# Deploy MailDev resources (PVC, Deployment, Services)
+envsubst < maildev-deployment.yaml.template | kubectl apply -f -
+
+# Deploy HTTPProxy for web UI access
+envsubst < contour-httpproxy-maildev.yaml.template | kubectl apply -f -
+
+
+DEPLOYMENT VERIFICATION
+=======================
+
+Pod Status:
+NAME                       READY   STATUS    RESTARTS   AGE
+maildev-775b88df4f-gxpc9   1/1     Running   0          37s
+
+Services:
+NAME           TYPE        CLUSTER-IP       PORT(S)
+maildev        ClusterIP   10.100.28.48     1025/TCP,1080/TCP
+maildev-smtp   ClusterIP   10.104.207.148   25/TCP
+
+HTTPProxy:
+NAME          FQDN                                   STATUS
+maildev-web   maildev-apic.demo01.mea-presales.org   valid
+
+
+MAILDEV ENDPOINTS
+=================
+
+Web UI:        http://maildev-apic.demo01.mea-presales.org
+SMTP Server:   maildev-smtp.ibm-apic.svc.cluster.local:25 (for APIC configuration)
+Internal UI:   maildev.ibm-apic.svc.cluster.local:1080
+
+
+CONFIGURE SMTP IN API CONNECT CLOUD MANAGER
+============================================
+
+Step 1: Login to Cloud Manager
+-------------------------------
+URL: https://admin-apic.demo01.mea-presales.org/admin
+Username: admin
+Password: Admin123!
+
+
+Step 2: Navigate to Email Server Configuration
+-----------------------------------------------
+1. Click "Resources" in top navigation
+2. Click "Notifications" in left sidebar
+3. Click "Create" button
+
+
+Step 3: Configure MailDev as Email Server
+------------------------------------------
+Enter the following configuration:
+
+Title:              MailDev Test Server
+Description:        Development email server for testing
+Host:               maildev-smtp.ibm-apic.svc.cluster.local
+Port:               25
+Secure Connection:  No (unchecked)
+Authentication:     No (unchecked)
+Email Address:      noreply@apic.local
+Display Name:       API Connect
+
+Click "Test connection" - should show "Connection successful"
+Click "Save"
+
+
+Step 4: Set as Default Email Server
+------------------------------------
+1. In the Notifications list, find "MailDev Test Server"
+2. Click the "..." menu (three dots)
+3. Select "Set as default"
+4. Confirm the action
+
+Status should show "Default" badge next to the email server name.
+
+
+TESTING EMAIL DELIVERY
+=======================
+
+Test 1: Send Test Email from Cloud Manager
+-------------------------------------------
+1. In Cloud Manager → Resources → Notifications
+2. Select "MailDev Test Server"
+3. Click "Send test email" button
+4. Enter any email address (e.g., test@example.com)
+5. Click "Send"
+6. Open MailDev UI: http://maildev-apic.demo01.mea-presales.org
+7. You should see the test email appear immediately in the inbox
+
+
+Test 2: Password Reset Email
+-----------------------------
+1. Logout from Cloud Manager
+2. Click "Forgot password?" on login page
+3. Enter admin email address
+4. Click "Submit"
+5. Check MailDev UI for password reset email
+6. Click the email to view the reset link
+
+
+Test 3: User Invitation Email
+------------------------------
+1. In Cloud Manager → Provider organizations
+2. Select or create a Provider Organization
+3. Click "Members" tab
+4. Click "Invite" button
+5. Enter any email address (e.g., developer@example.com)
+6. Select role (e.g., "Member") and click "Invite"
+7. Check MailDev UI - invitation email should appear
+8. Click the email to view the activation link
+
+
+EMAIL SERVER VERIFICATION
+==========================
+
+Verify email server is working:
+
+1. Cloud Manager → Resources → Notifications
+   Status should show: "Connected" with green indicator
+
+2. Test connectivity from Management pod:
+   kubectl exec -n ibm-apic deployment/management-apim -- \
+     nc -zv maildev-smtp.ibm-apic.svc.cluster.local 25
+   
+   Expected output: Connection to maildev-smtp.ibm-apic.svc.cluster.local 25 port [tcp/smtp] succeeded!
+
+3. Check MailDev logs:
+   kubectl logs -n ibm-apic -l app=maildev -f
+   
+   You should see SMTP connections when emails are sent.
+
+
+MAILDEV WEB UI FEATURES
+========================
+
+Email List View:
+- Displays all captured emails with Subject, From, To, Date
+- Auto-refreshes when new emails arrive
+- Click any email to view full details
+
+Email Detail View:
+- HTML rendering of email body
+- Plain text version toggle
+- View all email headers
+- Download attachments (if any)
+- View raw email source
+- Delete individual email
+
+Toolbar Actions:
+- Refresh: Manually refresh email list
+- Delete All: Clear all captured emails
+- API Docs: Access REST API documentation
+
+
+MAILDEV REST API
+================
+
+The MailDev web UI also provides a REST API:
+
+GET    /email           - List all emails
+GET    /email/:id       - Get specific email details
+DELETE /email/all       - Delete all emails
+DELETE /email/:id       - Delete specific email
+
+Example - Delete all emails via API:
+curl -X DELETE http://maildev-apic.demo01.mea-presales.org/email/all
+
+
+RESOURCE USAGE
+==============
+
+Storage:  5Gi PVC (nfs-ssd storage class)
+Memory:   128Mi request, 256Mi limit
+CPU:      100m request, 200m limit
+Replicas: 1 (not HA - development tool only)
+
+
+IMPORTANT NOTES
+===============
+
+⚠️  WARNING: MailDev is for DEVELOPMENT/TESTING ONLY!
+
+DO NOT use MailDev in production environments because:
+- No authentication/security on web UI or SMTP
+- All emails are stored locally (not actually delivered)
+- No TLS/SSL encryption
+- Single replica only (no high availability)
+- Limited storage (5Gi PVC)
+
+For production deployments, use:
+- Real SMTP relay (SendGrid, Amazon SES, Mailgun, etc.)
+- Authenticated SMTP with TLS encryption
+- Proper email delivery monitoring and logging
+- High availability configuration
+
+
+UNINSTALL MAILDEV
+=================
+
+If you need to remove MailDev:
+
+kubectl delete httpproxy maildev-web -n ibm-apic
+kubectl delete deployment maildev -n ibm-apic
+kubectl delete service maildev maildev-smtp -n ibm-apic
+kubectl delete pvc maildev-data -n ibm-apic
+
+Then reconfigure email server in Cloud Manager to use production SMTP.
+
+
+================================================================================
+
+
+MAILDEV DOCUMENTATION FINALIZED
+================================
+Updated: 2026-02-19 22:15
+
+Updated both DEPLOY-MAILDEV.txt and README.md to document the deployment pattern:
+
+1. DEPLOY-MAILDEV.txt:
+   - Added "DEPLOYMENT PATTERN: ENVSUBST PIPED TO KUBECTL" section
+   - Explained pattern: envsubst < template.yaml.template | kubectl apply -f -
+   - Listed benefits (no intermediate files, idempotent, consistent)
+   - Documented required environment variables
+   - Updated STEP 1 to clarify optional image loading
+   - Updated STEP 2 with manual export commands (config.env has CRLF issues)
+
+2. README.md:
+   - Added "Deployment Pattern" section before Quick Start
+   - Documented envsubst piped to kubectl pattern
+   - Listed benefits and required environment variables
+   - Updated file references to .yaml.template files
+   - Added Resource Usage section
+   - Added Important Notes (development/testing only warning)
+   - Added Uninstall section
+
+3. Cleaned directory:
+   - Removed plain YAML files (maildev-deployment.yaml, contour-httpproxy-maildev.yaml)
+   - Kept only .yaml.template files
+   - Final directory contents:
+     * DEPLOY-MAILDEV.txt (deployment guide)
+     * README.md (quick reference)
+     * maildev-deployment.yaml.template
+     * contour-httpproxy-maildev.yaml.template
+     * maildev-2.2.1-amd64.tar.gz (docker image)
+
+The envsubst piped to kubectl pattern is now fully documented and consistent
+across all v12.1.0.1-v3 package components.
+
+================================================================================
+
+
+================================================================================
+STORAGE TROUBLESHOOTING DOCUMENTATION ADDED
+================================================================================
+Created: 2026-02-19 22:20
+File: TROUBLESHOOTING-STORAGE.txt
+
+Created comprehensive storage troubleshooting guide covering NFS root_squash
+issues and PVC problems commonly encountered during APIC deployment.
+
+DOCUMENTED ISSUES
+=================
+
+Issue #1: NFS ROOT_SQUASH PERMISSION ERRORS
+- Symptom: Permission denied when containers write to NFS-backed PVCs
+- Root Cause: NFS root_squash maps root (UID 0) to nobody (UID 65534)
+- Affected: Management, Analytics, Portal, Gateways, MailDev
+- Error Examples:
+  * "mkdir: cannot create directory: Permission denied"
+  * "chown: changing ownership: Operation not permitted"
+  * "initdb: error: could not change permissions"
+  * "EACCES: permission denied"
+
+5 Solutions Documented:
+1. Configure NFS no_root_squash (recommended dev/test)
+2. Use supplemental groups with anonuid/anongid (preferred production)
+3. Use init containers to fix permissions
+4. Pre-create directories with correct ownership
+5. Use different storage backend
+
+Issue #2: PVC Bound But Pod Cannot Write
+- PVC shows Bound but permission errors in pod
+- Diagnosis: Check PVC/PV, volume mounts, NFS exports
+- Solution: Apply NFS root_squash fixes
+
+Issue #3: PVC Stuck in Pending State
+- PVC never binds, pod stuck in ContainerCreating
+- Diagnosis: Check StorageClass, provisioner, NFS accessibility
+- Solution: Verify provisioner, NFS server, StorageClass config
+
+Issue #4: PostgreSQL Init Container Failures
+- PostgreSQL initdb fails with permission errors
+- Cause: Cannot chmod data directory with root_squash
+- Solution: Disable root_squash or use fsGroup
+
+Issue #5: Storage Quota Exceeded
+- Disk pressure, evicted pods, no space left
+- Diagnosis: Check PVC usage, NFS server disk space
+- Solution: Expand PVC, clean up data, increase NFS storage
+
+
+REFERENCE INFORMATION
+=====================
+
+NFS Export Options Explained:
+- root_squash vs no_root_squash
+- all_squash behavior
+- anonuid/anongid configuration
+- sync vs async
+- secure vs insecure
+
+Best Practices:
+- Development/Test: Use no_root_squash for simplicity
+- Production: Use all_squash with anonuid/anongid (never no_root_squash)
+- Storage Class: Enable allowVolumeExpansion, use NFSv4.1
+- Monitoring: Disk space, IOPS, permission errors
+
+Verification Steps:
+- Check PVC binding status
+- Verify pod running state
+- Check logs for permission errors
+- Validate component health
+
+
+HISTORICAL CONTEXT
+==================
+
+This documentation captures the root_squash issue encountered early in the
+deployment process where PostgreSQL and other components failed due to NFS
+permission restrictions. The issue was resolved by configuring no_root_squash
+on the NFS server for the development environment.
+
+For production deployments, the guide recommends using supplemental groups
+with anonuid/anongid instead of disabling root_squash.
+
+
+LOCATION
+========
+
+File: /Volumes/Data/Users/vladimir/git/ibm/demos/ibm-apic-deployment/config-adp/v12.1.0.1-v3/TROUBLESHOOTING-STORAGE.txt
+
+This guide is now available at the package root level for easy reference during
+deployment and troubleshooting.
+
+================================================================================

@@ -17,7 +17,7 @@ spec:
       protocol: tls
       validation:
         caSecret: gateway-service
-        subjectName: gwv6-datapower.apic.svc.cluster.local
+        subjectName: gwv6-datapower.${APIC_NAMESPACE}.svc.cluster.local
 ---
 # Gateway Manager Endpoint
 apiVersion: projectcontour.io/v1
@@ -37,4 +37,4 @@ spec:
       protocol: tls
       validation:
         caSecret: gateway-service
-        subjectName: gwv6-datapower.apic.svc.cluster.local
+        subjectName: gwv6-datapower.${APIC_NAMESPACE}.svc.cluster.local

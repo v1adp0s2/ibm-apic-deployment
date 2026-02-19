@@ -24,7 +24,7 @@ REQUIRED SECRETS (create before deploying CR)
 # DevPortal encryption key
 kubectl create secret generic devportal-enc-key \
   --namespace=${APIC_NAMESPACE} \
-  --from-literal=encryptionKey=$(openssl rand -base64 32)
+  --from-literal=encryption_secret=$(openssl rand -base64 32)
 
 # Verify auto-created mTLS certs from 04-ingress-issuer.yaml
 kubectl get secret devportal-admin-client -n ${APIC_NAMESPACE}
@@ -43,7 +43,7 @@ kubectl get analyticscluster analytics -n ${APIC_NAMESPACE}
 kubectl get secret devportal-enc-key -n ${APIC_NAMESPACE} || \
   kubectl create secret generic devportal-enc-key \
     --namespace=${APIC_NAMESPACE} \
-    --from-literal=encryptionKey=$(openssl rand -base64 32)
+    --from-literal=encryption_secret=$(openssl rand -base64 32)
 
 # 3. Deploy DevPortal CR
 kubectl apply -f devportal-cr.yaml -n ${APIC_NAMESPACE}

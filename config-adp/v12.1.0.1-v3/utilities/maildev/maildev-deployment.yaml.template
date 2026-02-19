@@ -1,0 +1,99 @@
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: maildev-data
+  namespace: ${APIC_NAMESPACE}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: ${APIC_STORAGE_CLASS}
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: maildev
+  namespace: ${APIC_NAMESPACE}
+  labels:
+    app: maildev
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: maildev
+  template:
+    metadata:
+      labels:
+        app: maildev
+    spec:
+      containers:
+      - name: maildev
+        image: ${APIC_IMAGE_REGISTRY}/maildev:2.2.1
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: smtp
+          containerPort: 1025
+          protocol: TCP
+        - name: http
+          containerPort: 1080
+          protocol: TCP
+        env:
+        - name: MAILDEV_SMTP_PORT
+          value: "1025"
+        - name: MAILDEV_WEB_PORT
+          value: "1080"
+        volumeMounts:
+        - name: maildev-data
+          mountPath: /data
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+      volumes:
+      - name: maildev-data
+        persistentVolumeClaim:
+          claimName: maildev-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: maildev
+  namespace: ${APIC_NAMESPACE}
+  labels:
+    app: maildev
+spec:
+  type: ClusterIP
+  ports:
+  - name: smtp
+    port: 1025
+    targetPort: 1025
+    protocol: TCP
+  - name: http
+    port: 1080
+    targetPort: 1080
+    protocol: TCP
+  selector:
+    app: maildev
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: maildev-smtp
+  namespace: ${APIC_NAMESPACE}
+  labels:
+    app: maildev
+spec:
+  type: ClusterIP
+  ports:
+  - name: smtp
+    port: 25
+    targetPort: 1025
+    protocol: TCP
+  selector:
+    app: maildev

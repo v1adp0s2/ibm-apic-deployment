@@ -1,0 +1,357 @@
+================================================================================
+OPTIONAL UTILITY: MailDev Test Mail Server for IBM API Connect
+================================================================================
+
+MailDev is a simple email testing tool that captures all outgoing emails from
+API Connect without actually sending them to real addresses. Perfect for
+development and testing environments.
+
+PURPOSE:
+- Test password reset emails
+- Test user invitation emails  
+- Test API Connect notifications
+- Test Developer Portal emails
+- Test catalog subscription confirmations
+
+All emails are captured and displayed in a web UI instead of being sent!
+
+================================================================================
+PREREQUISITES
+================================================================================
+
+1. Harbor registry access (or load image locally)
+2. Storage class: nfs-ssd (or modify maildev-deployment.yaml.template)
+3. Namespace: ${APIC_NAMESPACE} (already created)
+4. Contour ingress controller (already deployed)
+5. envsubst utility (part of gettext package)
+
+================================================================================
+DEPLOYMENT PATTERN: ENVSUBST PIPED TO KUBECTL
+================================================================================
+
+This deployment uses YAML templates with environment variable placeholders that
+are processed with envsubst and piped directly to kubectl apply.
+
+Pattern:
+  envsubst < template.yaml.template | kubectl apply -f -
+
+Benefits:
+  - No intermediate files created
+  - Environment variables substituted at deployment time
+  - Idempotent (safe to run multiple times)
+  - Consistent with v12.1.0.1-v3 package deployment pattern
+
+Required Environment Variables:
+  - APIC_NAMESPACE           (e.g., ibm-apic)
+  - APIC_DOMAIN_BASE         (e.g., demo01.mea-presales.org)
+  - APIC_IMAGE_REGISTRY      (e.g., harbor.talos.zebra-cloud.net/apic)
+  - APIC_STORAGE_CLASS       (e.g., nfs-ssd)
+
+The templates use ${VARIABLE_NAME} syntax for substitution.
+
+================================================================================
+DEPLOYMENT STEPS
+================================================================================
+
+STEP 1: Load and Push Docker Image (if needed)
+-----------------------------------------------
+
+# If the MailDev image is not already in your registry, load and push it:
+docker load -i maildev-2.2.1-amd64.tar.gz
+docker tag maildev/maildev:2.2.1 ${APIC_IMAGE_REGISTRY}/maildev:2.2.1
+docker push ${APIC_IMAGE_REGISTRY}/maildev:2.2.1
+
+# Verify image in registry:
+# - Harbor UI: https://${APIC_REGISTRY_SERVER}/harbor/projects
+# - Or skip if image is already available in your registry
+
+
+STEP 2: Deploy MailDev to Kubernetes
+-------------------------------------
+
+cd utilities/maildev
+
+# Set environment variables (required for envsubst)
+# Note: If config.env has CRLF issues, set these manually:
+export APIC_NAMESPACE=ibm-apic
+export APIC_DOMAIN_BASE=demo01.mea-presales.org
+export APIC_IMAGE_REGISTRY=harbor.talos.zebra-cloud.net/apic
+export APIC_STORAGE_CLASS=nfs-ssd
+
+# Or source config.env if it's been converted to LF line endings:
+# source ../../config.env
+
+# Deploy MailDev resources (PVC, Deployment, Services)
+envsubst < maildev-deployment.yaml.template | kubectl apply -f -
+
+# Deploy HTTPProxy for web UI access
+envsubst < contour-httpproxy-maildev.yaml.template | kubectl apply -f -
+
+
+STEP 3: Verify Deployment
+--------------------------
+
+# Check pod status
+kubectl get pods -n ${APIC_NAMESPACE} -l app=maildev
+
+# Expected output:
+# NAME                       READY   STATUS    RESTARTS   AGE
+# maildev-xxxxx-xxxxx        1/1     Running   0          30s
+
+# Check services
+kubectl get svc -n ${APIC_NAMESPACE} -l app=maildev
+
+# Expected output:
+# NAME            TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)           AGE
+# maildev         ClusterIP   10.x.x.x        <none>        1025/TCP,1080/TCP 30s
+# maildev-smtp    ClusterIP   10.x.x.x        <none>        25/TCP            30s
+
+# Check HTTPProxy
+kubectl get httpproxy -n ${APIC_NAMESPACE} maildev-web
+
+# Expected output:
+# NAME          FQDN                                   TLS SECRET   STATUS   STATUS DESCRIPTION
+# maildev-web   maildev-apic.${APIC_DOMAIN_BASE}                valid    Valid HTTPProxy
+
+
+STEP 4: Access MailDev Web UI
+------------------------------
+
+Open in browser: http://maildev-apic.${APIC_DOMAIN_BASE}
+
+You should see the MailDev interface with:
+- Email list (empty initially)
+- Refresh button
+- Delete all button
+- REST API documentation link
+
+
+================================================================================
+CONFIGURE API CONNECT TO USE MAILDEV
+================================================================================
+
+STEP 1: Login to Cloud Manager
+-------------------------------
+URL: https://${APIC_MGMT_ADMIN_HOST}/admin
+Username: admin
+Password: ${APIC_MGMT_ADMIN_PASSWORD}
+
+
+STEP 2: Navigate to Email Server Configuration
+-----------------------------------------------
+1. Click "Resources" in top navigation
+2. Click "Notifications" in left sidebar
+3. Click "Create" button
+
+
+STEP 3: Configure Email Server
+-------------------------------
+Enter the following details:
+
+Title:              MailDev Test Server
+Description:        Development email server for testing
+Host:               maildev-smtp.${APIC_NAMESPACE}.svc.cluster.local
+Port:               25
+Secure Connection:  No (unchecked)
+Authentication:     No (unchecked)
+Email Address:      noreply@apic.local
+Display Name:       API Connect
+
+Click "Test connection" - should show "Connection successful"
+Click "Save"
+
+
+STEP 4: Set as Default Email Server
+------------------------------------
+1. In the Notifications list, find "MailDev Test Server"
+2. Click the "..." menu
+3. Select "Set as default"
+
+
+================================================================================
+TESTING
+================================================================================
+
+TEST 1: Send Test Email from Cloud Manager
+-------------------------------------------
+1. In Cloud Manager → Resources → Notifications
+2. Select "MailDev Test Server"
+3. Click "Send test email"
+4. Enter an email address (any address works, e.g., test@example.com)
+5. Click "Send"
+6. Open MailDev UI: http://maildev-apic.${APIC_DOMAIN_BASE}
+7. You should see the test email appear immediately
+
+
+TEST 2: Invite User to Provider Organization
+---------------------------------------------
+1. In Cloud Manager → Provider organizations
+2. Select or create a Provider Organization
+3. Click "Members" tab
+4. Click "Invite"  
+5. Enter any email address (e.g., developer@example.com)
+6. Select role and click "Invite"
+7. Check MailDev UI - invitation email should appear
+8. Click the email to view activation link
+
+
+TEST 3: Password Reset
+----------------------
+1. Logout of Cloud Manager
+2. Click "Forgot password?"
+3. Enter admin email
+4. Click "Submit"
+5. Check MailDev UI for password reset email
+
+
+================================================================================
+MAILDEV WEB UI FEATURES
+================================================================================
+
+Email List View:
+- Subject, From, To, Date for each email
+- Click any email to view details
+- Auto-refreshes when new emails arrive
+
+Email Detail View:
+- HTML rendering of email body
+- Plain text version toggle
+- View email headers
+- Download attachments
+- View raw source
+- Delete individual email
+
+REST API:
+- GET /email - List all emails
+- GET /email/:id - Get specific email
+- DELETE /email/all - Delete all emails
+- DELETE /email/:id - Delete specific email
+
+
+================================================================================
+MAILDEV SERVICES AND PORTS
+================================================================================
+
+Internal Services:
+------------------
+maildev.${APIC_NAMESPACE}.svc.cluster.local:1080    - Web UI (internal)
+maildev.${APIC_NAMESPACE}.svc.cluster.local:1025    - SMTP server (internal)
+maildev-smtp.${APIC_NAMESPACE}.svc.cluster.local:25 - SMTP server (port 25 alias)
+
+External Access:
+----------------
+http://maildev-apic.${APIC_DOMAIN_BASE} - Web UI (via HTTPProxy)
+
+API Connect Configuration:
+--------------------------
+SMTP Host: maildev-smtp.${APIC_NAMESPACE}.svc.cluster.local
+SMTP Port: 25
+
+
+================================================================================
+RESOURCE USAGE
+================================================================================
+
+Storage:
+- PVC: 5Gi (nfs-ssd storage class)
+- Stores email data persistently
+
+Memory:
+- Request: 128Mi
+- Limit: 256Mi
+
+CPU:
+- Request: 100m (0.1 CPU)
+- Limit: 200m (0.2 CPU)
+
+
+================================================================================
+TROUBLESHOOTING
+================================================================================
+
+ISSUE: Pod not starting
+-----------------------
+kubectl describe pod -n ${APIC_NAMESPACE} -l app=maildev
+kubectl logs -n ${APIC_NAMESPACE} -l app=maildev
+
+Common causes:
+- Image pull failure (check imagePullSecrets)
+- Storage class not available
+- Resource constraints
+
+
+ISSUE: Cannot access web UI
+----------------------------
+1. Check HTTPProxy status:
+   kubectl describe httpproxy maildev-web -n ${APIC_NAMESPACE}
+
+2. Check service:
+   kubectl get svc maildev -n ${APIC_NAMESPACE}
+
+3. Check pod logs:
+   kubectl logs -n ${APIC_NAMESPACE} -l app=maildev
+
+4. Verify DNS resolves to LoadBalancer IP:
+   nslookup maildev-apic.${APIC_DOMAIN_BASE}
+
+
+ISSUE: Emails not appearing
+----------------------------
+1. Check MailDev pod is running:
+   kubectl get pods -n ${APIC_NAMESPACE} -l app=maildev
+
+2. Check SMTP service:
+   kubectl get svc maildev-smtp -n ${APIC_NAMESPACE}
+
+3. Test SMTP connectivity from API Connect pod:
+   kubectl exec -n ${APIC_NAMESPACE} deployment/management-apim -- \
+     telnet maildev-smtp.${APIC_NAMESPACE}.svc.cluster.local 25
+
+4. Check MailDev logs:
+   kubectl logs -n ${APIC_NAMESPACE} -l app=maildev -f
+
+
+ISSUE: Storage full
+-------------------
+If the 5Gi PVC fills up:
+
+1. Delete old emails via web UI or API:
+   curl -X DELETE http://maildev-apic.${APIC_DOMAIN_BASE}/email/all
+
+2. Or increase PVC size:
+   kubectl edit pvc maildev-data -n ${APIC_NAMESPACE}
+   # Increase storage request (if storage class supports expansion)
+
+
+================================================================================
+UNINSTALL
+================================================================================
+
+kubectl delete -f contour-httpproxy-maildev.yaml
+kubectl delete -f maildev-deployment.yaml
+
+# If you want to delete stored emails too:
+kubectl delete pvc maildev-data -n ${APIC_NAMESPACE}
+
+
+================================================================================
+PRODUCTION CONSIDERATIONS
+================================================================================
+
+⚠️  WARNING: MailDev is for DEVELOPMENT/TESTING ONLY!
+
+DO NOT use MailDev in production environments because:
+- No authentication/security
+- All emails are stored locally (no real delivery)
+- No TLS/SSL encryption
+- Limited to single replica
+- No high availability
+
+For production, use:
+- Real SMTP server (SendGrid, Amazon SES, etc.)
+- Authenticated SMTP relay
+- TLS encryption
+- Proper email delivery monitoring
+
+
+================================================================================

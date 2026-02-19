@@ -18,7 +18,7 @@ REQUIRED SECRETS (create before deploying CR)
 # wM API Gateway encryption key (random 32-byte base64 key)
 kubectl create secret generic wmapigateway-enc-key \
   --namespace=${APIC_NAMESPACE} \
-  --from-literal=encryptionKey=$(openssl rand -base64 32)
+  --from-literal=password=$(openssl rand -base64 32)
 
 # wM API Gateway admin credentials
 kubectl create secret generic wmapigateway-admin-secret \

@@ -33,4 +33,4 @@ spec:
       protocol: tls
       validation:
         caSecret: devportal-ca
-        subjectName: devportal-devportal.apic.svc.cluster.local
+        subjectName: devportal-devportal.${APIC_NAMESPACE}.svc.cluster.local

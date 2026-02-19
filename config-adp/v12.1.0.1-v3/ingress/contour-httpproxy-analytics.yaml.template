@@ -17,4 +17,4 @@ spec:
       protocol: tls
       validation:
         caSecret: analytics-ca
-        subjectName: analytics-mtls-gw.apic.svc.cluster.local
+        subjectName: analytics-mtls-gw.${APIC_NAMESPACE}.svc.cluster.local

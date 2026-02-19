@@ -20,9 +20,9 @@ kubectl get secret datapower-admin-credentials -n ${APIC_NAMESPACE} 2>/dev/null 
     --namespace=${APIC_NAMESPACE} \
     --from-literal=password=admin
 
-# The mTLS certs (ai-gateway-service, ai-gateway-peering) are created automatically
-# by the operator. Verify after deployment:
-kubectl get secret ai-gateway-service ai-gateway-peering -n ${APIC_NAMESPACE}
+# The mTLS certs (gateway-service, gateway-peering) are created by cert-manager
+# from the ingress-issuer.yaml file. Verify they exist:
+kubectl get secret gateway-service gateway-peering -n ${APIC_NAMESPACE}
 
 ================================================================================
 DEPLOY

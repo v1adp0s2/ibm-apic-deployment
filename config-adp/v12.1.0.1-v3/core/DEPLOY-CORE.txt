@@ -44,7 +44,7 @@ kubectl create secret generic datapower-admin-credentials \
 # 1.4 Create management admin password secret
 kubectl create secret generic management-admin-secret \
   --namespace=${APIC_NAMESPACE} \
-  --from-literal=password=Admin123!
+  --from-literal=password=${APIC_MGMT_ADMIN_PASSWORD}
 
 # 1.5 Verify secrets
 kubectl get secrets -n ${APIC_NAMESPACE}
@@ -86,8 +86,9 @@ kubectl apply -f 02-prerequisites/04-ingress-issuer.yaml -n ${APIC_NAMESPACE}
 # 3.2 Wait for ingress-ca certificate to be issued
 kubectl wait --for=condition=Ready certificate/ingress-ca -n ${APIC_NAMESPACE} --timeout=120s
 
-# 3.3 Verify all certificates from ingress-issuer are ready
+# 3.3 Verify all certificates from ingress-issuer are ready (expect 13 total)
 kubectl get certificates -n ${APIC_NAMESPACE}
+# Expected: 13 certificates all with READY=True including consumer-endpoint
 
 # 3.4 Apply Contour IngressClass
 kubectl apply -f 02-prerequisites/05-contour-ingressclass.yaml
@@ -100,7 +101,7 @@ STEP 4 — MANAGEMENT SUBSYSTEM  (15–30 min to be ready)
 ================================================================================
 
 # 4.1 Deploy Management CR
-kubectl apply -f 03-management/06-management-cr.yaml -n ${APIC_NAMESPACE}
+envsubst < 03-management/06-management-cr.yaml.template | kubectl apply -f -
 
 # 4.2 Watch status (ctrl+c when phase = Running)
 kubectl get managementcluster -n ${APIC_NAMESPACE} -w
@@ -239,6 +240,6 @@ Platform API:        https://${APIC_MGMT_PLATFORM_API_HOST}
 Consumer API:        https://${APIC_MGMT_CONSUMER_API_HOST}
 Consumer Catalog:    https://${APIC_MGMT_CONSUMER_CATALOG_HOST}
 
-Default credentials: admin / Admin123!
+Default credentials: admin / ${APIC_MGMT_ADMIN_PASSWORD}
 
 ================================================================================

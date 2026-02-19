@@ -28,7 +28,7 @@ spec:
   mtlsValidateClient: true
   analyticsMode: true
   federatedAPIManagementMode: false
-  devPortalMode: false
+  devPortalMode: true
   storage:
     type: shared
     shared:
