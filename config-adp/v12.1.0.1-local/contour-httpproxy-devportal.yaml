@@ -1,0 +1,40 @@
+---
+# DevPortal Admin API
+apiVersion: projectcontour.io/v1
+kind: HTTPProxy
+metadata:
+  name: devportal-admin
+  namespace: apic
+spec:
+  virtualhost:
+    fqdn: admin-devportal-apic.talos-pc.zebra-cloud.net
+    tls:
+      secretName: devportal-admin-endpoint
+  routes:
+  - services:
+    - name: devportal-proxy
+      port: 4443
+      protocol: tls
+      validation:
+        caSecret: devportal-ca
+        subjectName: devportal-proxy.apic.svc.cluster.local
+---
+# DevPortal Web (Developer Portal UI)
+apiVersion: projectcontour.io/v1
+kind: HTTPProxy
+metadata:
+  name: devportal-web
+  namespace: apic
+spec:
+  virtualhost:
+    fqdn: devportal-apic.talos-pc.zebra-cloud.net
+    tls:
+      secretName: devportal-ui-endpoint
+  routes:
+  - services:
+    - name: devportal-devportal
+      port: 8443
+      protocol: tls
+      validation:
+        caSecret: devportal-ca
+        subjectName: devportal-devportal.apic.svc.cluster.local

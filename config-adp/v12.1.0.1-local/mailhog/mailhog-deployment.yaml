@@ -1,0 +1,78 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mailhog
+  namespace: apic
+  labels:
+    app: mailhog
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mailhog
+  template:
+    metadata:
+      labels:
+        app: mailhog
+    spec:
+      containers:
+      - name: mailhog
+        image: mailhog/mailhog:v1.0.1
+        ports:
+        - name: smtp
+          containerPort: 1025
+          protocol: TCP
+        - name: http
+          containerPort: 8025
+          protocol: TCP
+        env:
+        - name: MH_STORAGE
+          value: memory
+        - name: MH_HOSTNAME
+          value: mailhog.apic.svc.cluster.local
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mailhog
+  namespace: apic
+  labels:
+    app: mailhog
+spec:
+  type: ClusterIP
+  ports:
+  - name: smtp
+    port: 1025
+    targetPort: 1025
+    protocol: TCP
+  - name: http
+    port: 8025
+    targetPort: 8025
+    protocol: TCP
+  selector:
+    app: mailhog
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mailhog-smtp
+  namespace: apic
+  labels:
+    app: mailhog
+spec:
+  type: ClusterIP
+  ports:
+  - name: smtp
+    port: 25
+    targetPort: 1025
+    protocol: TCP
+  selector:
+    app: mailhog

@@ -1,0 +1,3 @@
+type: configured_gateway_service
+gateway_service_url: >-
+  https://api.apic.talos-pc.zebra-cloud.net/api/orgs/cd520d56-7efe-45e5-a3a7-b03b574ddbfe/availability-zones/01725384-f5fa-487d-a850-0cbbb4f0fbd5/gateway-services/024d768e-4606-4fe2-923e-bae915f3b57c

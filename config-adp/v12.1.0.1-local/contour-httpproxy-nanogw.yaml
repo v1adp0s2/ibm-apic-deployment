@@ -1,0 +1,21 @@
+---
+apiVersion: projectcontour.io/v1
+kind: HTTPProxy
+metadata:
+  name: nanogw-mgmt
+  namespace: apic
+spec:
+  virtualhost:
+    fqdn: nanogw.apic.talos-pc.zebra-cloud.net
+    tls:
+      secretName: nanogw-endpoint
+  routes:
+  - conditions:
+    - prefix: /
+    services:
+    - name: nanogw-mgmt
+      port: 3000
+      protocol: tls
+      validation:
+        caSecret: ingress-ca
+        subjectName: nanogw-mgmt.apic.svc

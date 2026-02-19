@@ -1,0 +1,39 @@
+apiVersion: projectcontour.io/v1
+kind: HTTPProxy
+metadata:
+  name: ai-gateway-gateway
+  namespace: apic
+spec:
+  virtualhost:
+    fqdn: ai-rgw-apic.talos-pc.zebra-cloud.net
+    tls:
+      secretName: ai-gateway-endpoint
+  routes:
+  - conditions:
+    - prefix: /
+    services:
+    - name: ai-gateway
+      port: 443
+      protocol: tls
+    timeoutPolicy:
+      response: 300s
+---
+apiVersion: projectcontour.io/v1
+kind: HTTPProxy
+metadata:
+  name: ai-gateway-gateway-manager
+  namespace: apic
+spec:
+  virtualhost:
+    fqdn: ai-rgwd-apic.talos-pc.zebra-cloud.net
+    tls:
+      secretName: ai-gateway-manager-endpoint
+  routes:
+  - conditions:
+    - prefix: /
+    services:
+    - name: ai-gateway-datapower
+      port: 3000
+      protocol: tls
+    timeoutPolicy:
+      response: 300s

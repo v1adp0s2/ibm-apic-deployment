@@ -1,0 +1,45 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: wmapigw-direct-ui
+  namespace: apic
+  annotations:
+    cert-manager.io/issuer: ingress-issuer
+    ingress.kubernetes.io/ssl-redirect: "true"
+    projectcontour.io/upstream-protocol.tls: "9072"
+spec:
+  ingressClassName: contour
+  tls:
+  - hosts:
+    - wmapigw-admin.apic.talos-pc.zebra-cloud.net
+    secretName: wmapigw-admin-cert
+  rules:
+  - host: wmapigw-admin.apic.talos-pc.zebra-cloud.net
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: wmapigw-apigateway
+            port:
+              number: 9072
+---
+# Alternative: Direct HTTPProxy to backend service
+apiVersion: projectcontour.io/v1
+kind: HTTPProxy
+metadata:
+  name: wmapigw-admin-direct
+  namespace: apic
+spec:
+  virtualhost:
+    fqdn: wmapigw-admin.apic.talos-pc.zebra-cloud.net
+    tls:
+      secretName: wmapigw-admin-cert
+  routes:
+  - conditions:
+    - prefix: /
+    services:
+    - name: wmapigw-apigateway
+      port: 9072
+      # No TLS validation - direct HTTP to backend

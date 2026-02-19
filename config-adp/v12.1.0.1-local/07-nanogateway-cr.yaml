@@ -1,0 +1,37 @@
+apiVersion: nanogateway.apiconnect.ibm.com/v1beta1
+kind: NanoGatewayCluster
+metadata:
+  name: nanogw
+spec:
+  version: 12.1.0.1
+  profile: n1xc2.m4
+  imagePullSecrets:
+  - harbor-registry-secret
+  imageRegistry: harbor.talos.zebra-cloud.net/apic
+  mgmtEndpoint:
+    ingressClassName: contour
+    annotations:
+      cert-manager.io/issuer: ingress-issuer
+    hosts:
+    - name: nanogw.apic.talos-pc.zebra-cloud.net
+      secretName: nanogw-endpoint
+  gatewayDomain: nanogw.apic.talos-pc.zebra-cloud.net
+  microServiceSecurity: certManager
+  certManagerIssuer:
+    name: ingress-issuer
+    kind: Issuer
+  jwksUrl: https://api.apic.talos-pc.zebra-cloud.net/api/cloud/oauth2/certs
+  redis:
+    hosts:
+    - valkey.apic.svc
+    port: 6379
+    mode: standalone
+    credential:
+      secretName: valkey-secret
+    tls:
+      secretName: valkey-tls
+  license:
+    accept: true
+    use: nonproduction
+    metric: PROCESSOR_VALUE_UNIT
+    license: L-SBZZ-CNR329

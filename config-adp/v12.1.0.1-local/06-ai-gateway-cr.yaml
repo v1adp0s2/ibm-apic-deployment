@@ -1,7 +1,7 @@
 apiVersion: gateway.apiconnect.ibm.com/v1beta1
 kind: GatewayCluster
 metadata:
-  name: gwv6
+  name: ai-gateway
   namespace: apic
 spec:
   version: 12.1.0.1
@@ -15,21 +15,21 @@ spec:
     annotations:
       cert-manager.io/issuer: ingress-issuer
     hosts:
-    - name: rgw-apic.talos-pc.zebra-cloud.net
-      secretName: gwv6-endpoint
+    - name: ai-rgw-apic.talos-pc.zebra-cloud.net
+      secretName: ai-gateway-endpoint
   gatewayManagerEndpoint:
     ingressClassName: contour
     annotations:
       cert-manager.io/issuer: ingress-issuer
     hosts:
-    - name: rgwd-apic.talos-pc.zebra-cloud.net
-      secretName: gwv6-manager-endpoint
+    - name: ai-rgwd-apic.talos-pc.zebra-cloud.net
+      secretName: ai-gateway-manager-endpoint
   apicGatewayServiceTLS:
-    secretName: gateway-service
+    secretName: ai-gateway-service
   apicGatewayPeeringTLS:
-    secretName: gateway-peering
+    secretName: ai-gateway-peering
   mgmtPlatformEndpointCASecret:
-    secretName: ingress-ca
+    secretName: management-ca
   datapowerLogLevel: 3
   license:
     accept: true

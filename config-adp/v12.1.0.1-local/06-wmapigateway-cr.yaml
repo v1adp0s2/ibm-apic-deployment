@@ -1,0 +1,38 @@
+apiVersion: wmapigateway.apiconnect.ibm.com/v1beta1
+kind: WMAPIGatewayCluster
+metadata:
+  name: wmapigw
+spec:
+  version: 12.1.0.1
+  profile: n1xc3.m6
+  imagePullSecrets:
+  - harbor-registry-secret
+  imageRegistry: harbor.talos.zebra-cloud.net/apic
+  gatewayEndpoint:
+    ingressClassName: contour
+    annotations:
+      cert-manager.io/issuer: ingress-issuer
+    hosts:
+    - name: wmapigw.apic.talos-pc.zebra-cloud.net
+      secretName: wmapigw-gateway-endpoint
+  mgmtEndpoint:
+    ingressClassName: contour
+    annotations:
+      cert-manager.io/issuer: ingress-issuer
+    hosts:
+    - name: wmapigw-ui.apic.talos-pc.zebra-cloud.net
+      secretName: wmapigw-mgmt-endpoint
+  storage:
+    volumeClaimTemplate:
+      storageClassName: nfs-ssd
+      volumeSize: 30Gi
+  encryptionSecret:
+    secretName: wmapigateway-enc-key
+  adminUser:
+    secretName: wmapigateway-admin-secret
+  mgmtClientSubjectDN: CN=management-client
+  license:
+    accept: true
+    use: nonproduction
+    metric: MONTHLY_API_CALL
+    license: L-SBZZ-CNR329

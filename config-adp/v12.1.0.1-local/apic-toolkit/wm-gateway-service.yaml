@@ -1,0 +1,7 @@
+name: wm-gateway-service
+title: webMethods API Gateway
+gateway_service_type: webmethods_api_gateway
+endpoint: https://wmapigw.apic.svc:443
+api_endpoint_base: https://wmapigw.apic.talos-pc.zebra-cloud.net
+sni:
+- host: '*'

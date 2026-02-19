@@ -2,6 +2,7 @@ apiVersion: management.apiconnect.ibm.com/v1beta1
 kind: ManagementCluster
 metadata:
   name: management
+  namespace: apic
 spec:
   version: 12.1.0.1
   imagePullSecrets:
@@ -34,35 +35,35 @@ spec:
     annotations:
       cert-manager.io/issuer: ingress-issuer
     hosts:
-    - name: admin.apic.talos-pc.zebra-cloud.net
+    - name: admin-apic.talos-pc.zebra-cloud.net
       secretName: cm-endpoint
   apiManagerEndpoint:
     ingressClassName: contour
     annotations:
       cert-manager.io/issuer: ingress-issuer
     hosts:
-    - name: manager.apic.talos-pc.zebra-cloud.net
+    - name: manager-apic.talos-pc.zebra-cloud.net
       secretName: apim-endpoint
   consumerCatalogEndpoint:
     ingressClassName: contour
     annotations:
       cert-manager.io/issuer: ingress-issuer
     hosts:
-    - name: consumer-catalog.apic.talos-pc.zebra-cloud.net
+    - name: consumer-catalog-apic.talos-pc.zebra-cloud.net
       secretName: consumer-catalog-endpoint
   platformAPIEndpoint:
     ingressClassName: contour
     annotations:
       cert-manager.io/issuer: ingress-issuer
     hosts:
-    - name: api.apic.talos-pc.zebra-cloud.net
+    - name: api-apic.talos-pc.zebra-cloud.net
       secretName: api-endpoint
   consumerAPIEndpoint:
     ingressClassName: contour
     annotations:
       cert-manager.io/issuer: ingress-issuer
     hosts:
-    - name: consumer.apic.talos-pc.zebra-cloud.net
+    - name: consumer-apic.talos-pc.zebra-cloud.net
       secretName: consumer-endpoint
   databaseVolumeClaimTemplate:
     storageClassName: nfs-ssd

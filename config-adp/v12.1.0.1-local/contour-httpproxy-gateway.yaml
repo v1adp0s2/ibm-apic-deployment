@@ -7,7 +7,7 @@ metadata:
   namespace: apic
 spec:
   virtualhost:
-    fqdn: rgw.apic.talos-pc.zebra-cloud.net
+    fqdn: rgw-apic.talos-pc.zebra-cloud.net
     tls:
       secretName: gwv6-endpoint
   routes:
@@ -27,7 +27,7 @@ metadata:
   namespace: apic
 spec:
   virtualhost:
-    fqdn: rgwd.apic.talos-pc.zebra-cloud.net
+    fqdn: rgwd-apic.talos-pc.zebra-cloud.net
     tls:
       secretName: gwv6-manager-endpoint
   routes:
