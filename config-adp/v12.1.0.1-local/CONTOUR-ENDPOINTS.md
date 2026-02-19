@@ -8,7 +8,7 @@ API Connect v12.1.0.1 on Talos cluster is now configured to use **Contour ingres
 
 | Controller | LoadBalancer IP | DNS Pattern | Status |
 |------------|----------------|-------------|---------|
-| **Contour** | `10.20.221.222` | `*.talos-pc.zebra-cloud.net` | ✅ Active (Management, Gateway, Portal, Analytics) |
+| **Contour** | `10.20.221.222` | `*.demo01.mea-presales.org` | ✅ Active (Management, Gateway, Portal, Analytics) |
 | nginx | `10.20.221.220` | `*.talos-nginx.zebra-cloud.net` | ⚠️ Inactive (replaced by Contour) |
 
 ## DNS Configuration Required
@@ -16,7 +16,7 @@ API Connect v12.1.0.1 on Talos cluster is now configured to use **Contour ingres
 Configure your DNS server with wildcard A records:
 
 ```
-*.talos-pc.zebra-cloud.net  A  10.20.221.222
+*.demo01.mea-presales.org  A  10.20.221.222
 ```
 
 ## API Connect Endpoints (Contour)
@@ -25,31 +25,31 @@ Configure your DNS server with wildcard A records:
 
 | Endpoint | URL | TLS Certificate |
 |----------|-----|-----------------|
-| Cloud Manager | `https://admin.apic.talos-pc.zebra-cloud.net/admin` | ✅ cert-manager (cm-endpoint) |
-| API Manager | `https://manager.apic.talos-pc.zebra-cloud.net/manager` | ✅ cert-manager (apim-endpoint) |
-| Platform API | `https://api.apic.talos-pc.zebra-cloud.net/` | ✅ cert-manager (api-endpoint) |
-| Consumer API | `https://consumer.apic.talos-pc.zebra-cloud.net/` | ✅ cert-manager (consumer-endpoint) |
-| Consumer Catalog | `https://consumer-catalog.apic.talos-pc.zebra-cloud.net/` | ✅ cert-manager (consumer-catalog-endpoint) |
+| Cloud Manager | `https://admin.apic.demo01.mea-presales.org/admin` | ✅ cert-manager (cm-endpoint) |
+| API Manager | `https://manager.apic.demo01.mea-presales.org/manager` | ✅ cert-manager (apim-endpoint) |
+| Platform API | `https://api.apic.demo01.mea-presales.org/` | ✅ cert-manager (api-endpoint) |
+| Consumer API | `https://consumer.apic.demo01.mea-presales.org/` | ✅ cert-manager (consumer-endpoint) |
+| Consumer Catalog | `https://consumer-catalog.apic.demo01.mea-presales.org/` | ✅ cert-manager (consumer-catalog-endpoint) |
 
 ### Gateway Subsystem
 
 | Endpoint | URL | TLS Certificate |
 |----------|-----|-----------------|
-| API Gateway | `https://rgw.apic.talos-pc.zebra-cloud.net/` | ✅ cert-manager (gwv6-endpoint) |
-| Gateway Manager | `https://rgwd.apic.talos-pc.zebra-cloud.net/` | ✅ cert-manager (gwv6-manager-endpoint) |
+| API Gateway | `https://rgw.apic.demo01.mea-presales.org/` | ✅ cert-manager (gwv6-endpoint) |
+| Gateway Manager | `https://rgwd.apic.demo01.mea-presales.org/` | ✅ cert-manager (gwv6-manager-endpoint) |
 
 ### Portal Subsystem
 
 | Endpoint | URL | TLS Certificate |
 |----------|-----|-----------------|
-| Portal Admin | `https://api.portal.apic.talos-pc.zebra-cloud.net/` | ✅ cert-manager (portal-admin) |
-| Portal UI | `https://portal.apic.talos-pc.zebra-cloud.net/` | ✅ cert-manager (portal-web) |
+| Portal Admin | `https://api.portal.apic.demo01.mea-presales.org/` | ✅ cert-manager (portal-admin) |
+| Portal UI | `https://portal.apic.demo01.mea-presales.org/` | ✅ cert-manager (portal-web) |
 
 ### Analytics Subsystem
 
 | Endpoint | URL | TLS Certificate |
 |----------|-----|-----------------|
-| Analytics Ingestion | `https://ai.apic.talos-pc.zebra-cloud.net/` | ✅ cert-manager (analytics-ai-endpoint) |
+| Analytics Ingestion | `https://ai.apic.demo01.mea-presales.org/` | ✅ cert-manager (analytics-ai-endpoint) |
 
 ## Contour Configuration
 
@@ -117,7 +117,7 @@ All Management ingresses should show:
 ### Test Cloud Manager
 
 ```bash
-curl -k -I https://admin.apic.talos-pc.zebra-cloud.net/admin
+curl -k -I https://admin.apic.demo01.mea-presales.org/admin
 ```
 
 Expected: HTTP 200 or redirect to login page
@@ -125,7 +125,7 @@ Expected: HTTP 200 or redirect to login page
 ### Test Certificate
 
 ```bash
-openssl s_client -connect admin.apic.talos-pc.zebra-cloud.net:443 -servername admin.apic.talos-pc.zebra-cloud.net < /dev/null 2>&1 | grep -A 2 "subject="
+openssl s_client -connect admin.apic.demo01.mea-presales.org:443 -servername admin.apic.demo01.mea-presales.org < /dev/null 2>&1 | grep -A 2 "subject="
 ```
 
 Expected: Certificate issued by ingress-issuer
@@ -190,6 +190,6 @@ kubectl get events -n projectcontour --sort-by='.lastTimestamp'
 3. ✅ Gateway subsystem using Contour
 4. ✅ Portal subsystem using Contour
 5. ✅ Analytics subsystem using Contour
-6. ✅ Configure DNS wildcard for `*.talos-pc.zebra-cloud.net`
+6. ✅ Configure DNS wildcard for `*.demo01.mea-presales.org`
 7. ✅ All certificates issued and ready
 8. ⏳ Test all endpoints (waiting for DNS propagation)

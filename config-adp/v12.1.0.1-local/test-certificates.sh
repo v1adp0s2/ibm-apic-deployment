@@ -89,7 +89,7 @@ kubectl get pods -n apic | grep nanogw | awk '{printf "    %-50s %s\n", $1, $2}'
 echo ""
 echo "6. Testing Gateway Endpoints"
 echo "----------------------------"
-for endpoint in wmapigw-ui.apic.talos-pc.zebra-cloud.net gwv6-manager.apic.talos-pc.zebra-cloud.net nanogw.apic.talos-pc.zebra-cloud.net; do
+for endpoint in wmapigw-ui.apic.demo01.mea-presales.org gwv6-manager.apic.demo01.mea-presales.org nanogw.apic.demo01.mea-presales.org; do
     echo -n "  https://$endpoint: "
     if curl -k -s -o /dev/null -w "%{http_code}" https://$endpoint/health 2>/dev/null | grep -q "200\|404\|503"; then
         code=$(curl -k -s -o /dev/null -w "%{http_code}" https://$endpoint/health 2>/dev/null)

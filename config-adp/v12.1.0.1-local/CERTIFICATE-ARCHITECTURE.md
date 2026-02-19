@@ -144,15 +144,15 @@ kubectl rollout restart deployment/<deployment-name> -n apic
 
 ### webMethods Gateway
 ```bash
-curl -k https://wmapigw-ui.apic.talos-pc.zebra-cloud.net/health
+curl -k https://wmapigw-ui.apic.demo01.mea-presales.org/health
 ```
 
 ### DataPower Gateway
 ```bash
-curl -k https://gwv6-manager.apic.talos-pc.zebra-cloud.net/health
+curl -k https://gwv6-manager.apic.demo01.mea-presales.org/health
 ```
 
 ### Nano Gateway
 ```bash
-curl -k https://nanogw.apic.talos-pc.zebra-cloud.net/health
+curl -k https://nanogw.apic.demo01.mea-presales.org/health
 ```

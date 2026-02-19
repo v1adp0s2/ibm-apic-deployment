@@ -6,7 +6,7 @@ metadata:
   namespace: apic
 spec:
   virtualhost:
-    fqdn: nanogw.apic.talos-pc.zebra-cloud.net
+    fqdn: nanogw.apic.demo01.mea-presales.org
     tls:
       secretName: nanogw-endpoint
   routes:

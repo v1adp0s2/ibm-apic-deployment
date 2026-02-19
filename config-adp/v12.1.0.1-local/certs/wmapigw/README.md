@@ -20,7 +20,7 @@
 
 ### Access webMethods GUI:
 Once the certificate is imported, you can access:
-- **Management UI**: https://wmapigw-ui.apic.talos-pc.zebra-cloud.net
+- **Management UI**: https://wmapigw-ui.apic.demo01.mea-presales.org
 - **Login credentials**:
   - Username: `Administrator`
   - Password: `Admin123!`
@@ -39,5 +39,5 @@ If you still can't access the UI:
 ## Alternative Access (curl)
 ```bash
 curl -k --cert client.crt --key client.key \
-  https://wmapigw-ui.apic.talos-pc.zebra-cloud.net
+  https://wmapigw-ui.apic.demo01.mea-presales.org
 ```

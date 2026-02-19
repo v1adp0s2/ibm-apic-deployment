@@ -7,7 +7,7 @@ metadata:
   namespace: apic
 spec:
   virtualhost:
-    fqdn: admin-devportal-apic.talos-pc.zebra-cloud.net
+    fqdn: admin-devportal-apic.demo01.mea-presales.org
     tls:
       secretName: devportal-admin-endpoint
   routes:
@@ -27,7 +27,7 @@ metadata:
   namespace: apic
 spec:
   virtualhost:
-    fqdn: devportal-apic.talos-pc.zebra-cloud.net
+    fqdn: devportal-apic.demo01.mea-presales.org
     tls:
       secretName: devportal-ui-endpoint
   routes:

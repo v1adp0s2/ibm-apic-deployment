@@ -38,18 +38,18 @@ All certificates, mTLS configurations, and Certificate Authorities are properly 
   - `wmapigw-apigateway-0` (1/1)
   - `wmapigw-opensearch-0` (1/1)
   - `wmapigw-proxy-7d5cb4969b-7vl7l` (2/2)
-- **Endpoint**: https://wmapigw-ui.apic.talos-pc.zebra-cloud.net ✓
+- **Endpoint**: https://wmapigw-ui.apic.demo01.mea-presales.org ✓
 - **Certificate Issue Fixed**: Changed `mgmtClientSubjectDN` to `CN=management-client`
 
 ### DataPower Gateway (AI Gateway)
 - **Status**: ✅ Running (3/3)
 - **Pod**: `gwv6-0` (1/1)
-- **Endpoint**: https://rgwd.apic.talos-pc.zebra-cloud.net ✓
+- **Endpoint**: https://rgwd.apic.demo01.mea-presales.org ✓
 - **CA Configuration**: Correctly uses `management-ca`
 
 ### Nano Gateway
 - **Status**: ⏳ Pending (Still deploying)
-- **Endpoint**: https://nanogw.apic.talos-pc.zebra-cloud.net (503 - Ready)
+- **Endpoint**: https://nanogw.apic.demo01.mea-presales.org (503 - Ready)
 - **Redis**: Connected to Valkey with TLS
 
 ### Valkey (Redis)

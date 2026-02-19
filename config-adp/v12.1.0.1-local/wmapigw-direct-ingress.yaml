@@ -11,10 +11,10 @@ spec:
   ingressClassName: contour
   tls:
   - hosts:
-    - wmapigw-admin.apic.talos-pc.zebra-cloud.net
+    - wmapigw-admin.apic.demo01.mea-presales.org
     secretName: wmapigw-admin-cert
   rules:
-  - host: wmapigw-admin.apic.talos-pc.zebra-cloud.net
+  - host: wmapigw-admin.apic.demo01.mea-presales.org
     http:
       paths:
       - path: /
@@ -33,7 +33,7 @@ metadata:
   namespace: apic
 spec:
   virtualhost:
-    fqdn: wmapigw-admin.apic.talos-pc.zebra-cloud.net
+    fqdn: wmapigw-admin.apic.demo01.mea-presales.org
     tls:
       secretName: wmapigw-admin-cert
   routes:

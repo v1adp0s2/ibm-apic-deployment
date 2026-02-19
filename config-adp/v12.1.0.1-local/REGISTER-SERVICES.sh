@@ -13,7 +13,7 @@ echo ""
 
 # Configuration
 export KUBECONFIG=/Volumes/Data/Users/vladimir/git/ibm/demos/ibm-apic-deployment/talos/talos02-kubeconfig.yaml
-export SERVER="api.apic.talos-pc.zebra-cloud.net"
+export SERVER="api.apic.demo01.mea-presales.org"
 export ORG="admin"
 export AZ="availability-zone-default"
 export REALM="admin/default-idp-1"
@@ -143,7 +143,7 @@ echo "  - Developer Portal:  https://portal-nginx.apic.svc:8443"
 echo "  - Analytics Service: https://analytics-ingestion-https.apic.svc:443"
 echo ""
 echo "Verify in Cloud Manager:"
-echo "  https://admin.apic.talos-pc.zebra-cloud.net/admin"
+echo "  https://admin.apic.demo01.mea-presales.org/admin"
 echo ""
 echo "  Resources > Gateway Services"
 echo "  Resources > Portal Services"

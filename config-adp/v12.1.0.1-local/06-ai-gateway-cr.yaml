@@ -15,14 +15,14 @@ spec:
     annotations:
       cert-manager.io/issuer: ingress-issuer
     hosts:
-    - name: ai-rgw-apic.talos-pc.zebra-cloud.net
+    - name: ai-rgw-apic.demo01.mea-presales.org
       secretName: ai-gateway-endpoint
   gatewayManagerEndpoint:
     ingressClassName: contour
     annotations:
       cert-manager.io/issuer: ingress-issuer
     hosts:
-    - name: ai-rgwd-apic.talos-pc.zebra-cloud.net
+    - name: ai-rgwd-apic.demo01.mea-presales.org
       secretName: ai-gateway-manager-endpoint
   apicGatewayServiceTLS:
     secretName: ai-gateway-service

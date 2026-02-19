@@ -13,14 +13,14 @@ spec:
     annotations:
       cert-manager.io/issuer: ingress-issuer
     hosts:
-    - name: wmapigw.apic.talos-pc.zebra-cloud.net
+    - name: wmapigw.apic.demo01.mea-presales.org
       secretName: wmapigw-gateway-endpoint
   mgmtEndpoint:
     ingressClassName: contour
     annotations:
       cert-manager.io/issuer: ingress-issuer
     hosts:
-    - name: wmapigw-ui.apic.talos-pc.zebra-cloud.net
+    - name: wmapigw-ui.apic.demo01.mea-presales.org
       secretName: wmapigw-mgmt-endpoint
   storage:
     volumeClaimTemplate:

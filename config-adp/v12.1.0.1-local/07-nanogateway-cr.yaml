@@ -13,14 +13,14 @@ spec:
     annotations:
       cert-manager.io/issuer: ingress-issuer
     hosts:
-    - name: nanogw.apic.talos-pc.zebra-cloud.net
+    - name: nanogw.apic.demo01.mea-presales.org
       secretName: nanogw-endpoint
-  gatewayDomain: nanogw.apic.talos-pc.zebra-cloud.net
+  gatewayDomain: nanogw.apic.demo01.mea-presales.org
   microServiceSecurity: certManager
   certManagerIssuer:
     name: ingress-issuer
     kind: Issuer
-  jwksUrl: https://api.apic.talos-pc.zebra-cloud.net/api/cloud/oauth2/certs
+  jwksUrl: https://api.apic.demo01.mea-presales.org/api/cloud/oauth2/certs
   redis:
     hosts:
     - valkey.apic.svc

@@ -5,7 +5,7 @@ metadata:
   namespace: apic
 spec:
   virtualhost:
-    fqdn: ai-rgw-apic.talos-pc.zebra-cloud.net
+    fqdn: ai-rgw-apic.demo01.mea-presales.org
     tls:
       secretName: ai-gateway-endpoint
   routes:
@@ -25,7 +25,7 @@ metadata:
   namespace: apic
 spec:
   virtualhost:
-    fqdn: ai-rgwd-apic.talos-pc.zebra-cloud.net
+    fqdn: ai-rgwd-apic.demo01.mea-presales.org
     tls:
       secretName: ai-gateway-manager-endpoint
   routes:

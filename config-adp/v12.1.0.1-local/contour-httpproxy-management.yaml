@@ -7,7 +7,7 @@ metadata:
   namespace: apic
 spec:
   virtualhost:
-    fqdn: admin-apic.talos-pc.zebra-cloud.net
+    fqdn: admin-apic.demo01.mea-presales.org
     tls:
       secretName: cm-endpoint
   routes:
@@ -27,7 +27,7 @@ metadata:
   namespace: apic
 spec:
   virtualhost:
-    fqdn: manager-apic.talos-pc.zebra-cloud.net
+    fqdn: manager-apic.demo01.mea-presales.org
     tls:
       secretName: apim-endpoint
   routes:
@@ -47,7 +47,7 @@ metadata:
   namespace: apic
 spec:
   virtualhost:
-    fqdn: api-apic.talos-pc.zebra-cloud.net
+    fqdn: api-apic.demo01.mea-presales.org
     tls:
       secretName: api-endpoint
   routes:
@@ -67,7 +67,7 @@ metadata:
   namespace: apic
 spec:
   virtualhost:
-    fqdn: consumer-apic.talos-pc.zebra-cloud.net
+    fqdn: consumer-apic.demo01.mea-presales.org
     tls:
       secretName: consumer-endpoint
   routes:
@@ -87,7 +87,7 @@ metadata:
   namespace: apic
 spec:
   virtualhost:
-    fqdn: consumer-catalog-apic.talos-pc.zebra-cloud.net
+    fqdn: consumer-catalog-apic.demo01.mea-presales.org
     tls:
       secretName: consumer-catalog-endpoint
   routes:

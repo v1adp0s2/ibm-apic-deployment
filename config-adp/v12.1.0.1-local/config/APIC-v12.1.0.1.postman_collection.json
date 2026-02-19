@@ -1,0 +1,321 @@
+{
+  "info": {
+    "name": "IBM API Connect v12.1.0.1",
+    "description": "IBM API Connect v12.1.0.1 - demo01.mea-presales.org",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "platform_api",    "value": "https://api-apic.demo01.mea-presales.org" },
+    { "key": "cloud_admin",     "value": "https://admin-apic.demo01.mea-presales.org" },
+    { "key": "api_manager",     "value": "https://manager-apic.demo01.mea-presales.org" },
+    { "key": "consumer_api",    "value": "https://consumer-apic.demo01.mea-presales.org" },
+    { "key": "gateway_api",     "value": "https://rgw-apic.demo01.mea-presales.org" },
+    { "key": "gateway_manager", "value": "https://rgwd-apic.demo01.mea-presales.org" },
+    { "key": "ai_gateway_api",  "value": "https://ai-rgw-apic.demo01.mea-presales.org" },
+    { "key": "ai_gw_manager",   "value": "https://ai-rgwd-apic.demo01.mea-presales.org" },
+    { "key": "portal_admin",    "value": "https://admin-devportal-apic.demo01.mea-presales.org" },
+    { "key": "username",        "value": "admin" },
+    { "key": "password",        "value": "Admin123!", "type": "secret" },
+    { "key": "realm",           "value": "admin/default-idp-1" },
+    { "key": "client_id",       "value": "aa166ee3-2502-44bc-bebc-bd5e787150c5" },
+    { "key": "client_secret",   "value": "bec0153c-bee9-4eb3-94e4-08b2fa43cf62", "type": "secret" },
+    { "key": "org",             "value": "admin" },
+    { "key": "az",              "value": "availability-zone-default" },
+    { "key": "access_token",    "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Login - Get Access Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const token = pm.response.json().access_token;",
+                  "    pm.collectionVariables.set('access_token', token);",
+                  "    console.log('Token saved successfully');",
+                  "} else {",
+                  "    console.error('Login failed:', pm.response.text());",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Accept",       "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"grant_type\": \"password\",\n  \"username\": \"{{username}}\",\n  \"password\": \"{{password}}\",\n  \"realm\": \"{{realm}}\",\n  \"client_id\": \"{{client_id}}\",\n  \"client_secret\": \"{{client_secret}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{platform_api}}/api/token",
+              "host": ["{{platform_api}}"],
+              "path": ["api", "token"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Health Checks",
+      "item": [
+        {
+          "name": "Identity Providers (no auth - validates DB)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{platform_api}}/api/cloud/admin/identity-providers",
+              "host": ["{{platform_api}}"],
+              "path": ["api", "cloud", "admin", "identity-providers"]
+            }
+          }
+        },
+        {
+          "name": "Topology - All Subsystems Status",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" },
+              { "key": "Accept",        "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{platform_api}}/api/cloud/topology",
+              "host": ["{{platform_api}}"],
+              "path": ["api", "cloud", "topology"]
+            }
+          }
+        },
+        {
+          "name": "Current User (auth check)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" },
+              { "key": "Accept",        "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{platform_api}}/api/me",
+              "host": ["{{platform_api}}"],
+              "path": ["api", "me"]
+            }
+          }
+        },
+        {
+          "name": "Gateway v6 - API Init Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gateway_api}}/webapi-init-check",
+              "host": ["{{gateway_api}}"],
+              "path": ["webapi-init-check"]
+            }
+          }
+        },
+        {
+          "name": "AI Gateway - API Init Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{ai_gateway_api}}/webapi-init-check",
+              "host": ["{{ai_gateway_api}}"],
+              "path": ["webapi-init-check"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Cloud Admin",
+      "item": [
+        {
+          "name": "Get Cloud Admin Info",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" },
+              { "key": "Accept",        "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{platform_api}}/api/cloud/admin",
+              "host": ["{{platform_api}}"],
+              "path": ["api", "cloud", "admin"]
+            }
+          }
+        },
+        {
+          "name": "List Orgs",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" },
+              { "key": "Accept",        "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{platform_api}}/api/orgs",
+              "host": ["{{platform_api}}"],
+              "path": ["api", "orgs"]
+            }
+          }
+        },
+        {
+          "name": "Get Availability Zones",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" },
+              { "key": "Accept",        "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{platform_api}}/api/orgs/{{org}}/availability-zones",
+              "host": ["{{platform_api}}"],
+              "path": ["api", "orgs", "{{org}}", "availability-zones"]
+            }
+          }
+        },
+        {
+          "name": "List Gateway Services",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" },
+              { "key": "Accept",        "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{platform_api}}/api/orgs/{{org}}/availability-zones/{{az}}/gateway-services",
+              "host": ["{{platform_api}}"],
+              "path": ["api", "orgs", "{{org}}", "availability-zones", "{{az}}", "gateway-services"]
+            }
+          }
+        },
+        {
+          "name": "List Portal Services",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" },
+              { "key": "Accept",        "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{platform_api}}/api/orgs/{{org}}/availability-zones/{{az}}/portal-services",
+              "host": ["{{platform_api}}"],
+              "path": ["api", "orgs", "{{org}}", "availability-zones", "{{az}}", "portal-services"]
+            }
+          }
+        },
+        {
+          "name": "List Analytics Services",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" },
+              { "key": "Accept",        "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{platform_api}}/api/orgs/{{org}}/availability-zones/{{az}}/analytics-services",
+              "host": ["{{platform_api}}"],
+              "path": ["api", "orgs", "{{org}}", "availability-zones", "{{az}}", "analytics-services"]
+            }
+          }
+        },
+        {
+          "name": "List TLS Client Profiles",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" },
+              { "key": "Accept",        "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{platform_api}}/api/orgs/{{org}}/tls-client-profiles",
+              "host": ["{{platform_api}}"],
+              "path": ["api", "orgs", "{{org}}", "tls-client-profiles"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "API Manager",
+      "item": [
+        {
+          "name": "List Provider Orgs",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" },
+              { "key": "Accept",        "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{platform_api}}/api/orgs?org_type=provider",
+              "host": ["{{platform_api}}"],
+              "path": ["api", "orgs"],
+              "query": [{ "key": "org_type", "value": "provider" }]
+            }
+          }
+        },
+        {
+          "name": "List Catalogs",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" },
+              { "key": "Accept",        "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{platform_api}}/api/orgs/:porg/catalogs",
+              "host": ["{{platform_api}}"],
+              "path": ["api", "orgs", ":porg", "catalogs"],
+              "variable": [{ "key": "porg", "value": "admin", "description": "Provider org name" }]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Gateway (DataPower)",
+      "item": [
+        {
+          "name": "Gateway v6 - Status",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Basic YWRtaW46YWRtaW4=" }
+            ],
+            "url": {
+              "raw": "{{gateway_manager}}/mgmt/status/main",
+              "host": ["{{gateway_manager}}"],
+              "path": ["mgmt", "status", "main"]
+            }
+          }
+        },
+        {
+          "name": "AI Gateway - Status",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Basic YWRtaW46YWRtaW4=" }
+            ],
+            "url": {
+              "raw": "{{ai_gw_manager}}/mgmt/status/main",
+              "host": ["{{ai_gw_manager}}"],
+              "path": ["mgmt", "status", "main"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,5 +1,5 @@
 name: 'local-wm-gateway'
 title: 'local-wm-gateway'
 endpoint: 'https://wmapigw.apic.svc:443'
-api_endpoint_base: 'https://wmapigw.apic.talos-pc.zebra-cloud.net/'
+api_endpoint_base: 'https://wmapigw.apic.demo01.mea-presales.org/'
 state: 'ready'

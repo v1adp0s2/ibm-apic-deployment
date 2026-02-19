@@ -1,0 +1,137 @@
+# IBM API Connect v12.1.0.1 - REST Client requests
+# Usage: Click "Send Request" above any request
+# Tip: Run "### Login" first to get a token, then use it in subsequent requests
+
+# ─────────────────────────────────────────────
+# Variables
+# ─────────────────────────────────────────────
+@platform_api     = https://api-apic.demo01.mea-presales.org
+@cloud_admin      = https://admin-apic.demo01.mea-presales.org
+@api_manager      = https://manager-apic.demo01.mea-presales.org
+@consumer_api     = https://consumer-apic.demo01.mea-presales.org
+@gateway_manager  = https://rgwd-apic.demo01.mea-presales.org
+@ai_gw_manager    = https://ai-rgwd-apic.demo01.mea-presales.org
+@portal_admin     = https://admin-devportal-apic.demo01.mea-presales.org
+
+@username         = admin
+@password         = Admin123!
+@realm            = admin/default-idp-1
+@client_id        = aa166ee3-2502-44bc-bebc-bd5e787150c5
+@client_secret    = bec0153c-bee9-4eb3-94e4-08b2fa43cf62
+@org              = admin
+@az               = availability-zone-default
+
+# Paste token here after running Login request, or use named response capture below
+@token            = "<PASTE_TOKEN_HERE>"
+
+
+# ─────────────────────────────────────────────
+# AUTHENTICATION
+# ─────────────────────────────────────────────
+
+### Login - Get Access Token
+# @name loginRequest
+POST {{platform_api}}/api/token
+Content-Type: application/json
+Accept: application/json
+
+{
+  "grant_type": "password",
+  "username": "{{username}}",
+  "password": "{{password}}",
+  "realm": "{{realm}}",
+  "client_id": "{{client_id}}",
+  "client_secret": "{{client_secret}}"
+}
+
+
+# ─────────────────────────────────────────────
+# HEALTH CHECKS
+# ─────────────────────────────────────────────
+
+### Platform API - Identity Providers (no auth required, validates DB connectivity)
+GET {{platform_api}}/api/cloud/admin/identity-providers
+Accept: application/json
+
+### Platform API - Topology (all subsystems status, auth required)
+GET {{platform_api}}/api/cloud/topology
+Authorization: Bearer {{loginRequest.response.body.access_token}}
+Accept: application/json
+
+### Platform API - Current User (auth connectivity check)
+GET {{platform_api}}/api/me
+Authorization: Bearer {{loginRequest.response.body.access_token}}
+Accept: application/json
+
+### Gateway v6 - API Init Check (returns 200 when APIs are ready)
+GET https://rgw-apic.demo01.mea-presales.org/webapi-init-check
+
+### AI Gateway - API Init Check
+GET https://ai-rgw-apic.demo01.mea-presales.org/webapi-init-check
+
+
+# ─────────────────────────────────────────────
+# CLOUD ADMIN
+# ─────────────────────────────────────────────
+
+### Get Cloud Admin Info
+GET {{platform_api}}/api/cloud/admin
+Authorization: Bearer {{loginRequest.response.body.access_token}}
+Accept: application/json
+
+### List Orgs
+GET {{platform_api}}/api/orgs
+Authorization: Bearer {{loginRequest.response.body.access_token}}
+Accept: application/json
+
+### Get Availability Zones
+GET {{platform_api}}/api/orgs/{{org}}/availability-zones
+Authorization: Bearer {{loginRequest.response.body.access_token}}
+Accept: application/json
+
+### List Gateway Services
+GET {{platform_api}}/api/orgs/{{org}}/availability-zones/{{az}}/gateway-services
+Authorization: Bearer {{loginRequest.response.body.access_token}}
+Accept: application/json
+
+### List Portal Services
+GET {{platform_api}}/api/orgs/{{org}}/availability-zones/{{az}}/portal-services
+Authorization: Bearer {{loginRequest.response.body.access_token}}
+Accept: application/json
+
+### List Analytics Services
+GET {{platform_api}}/api/orgs/{{org}}/availability-zones/{{az}}/analytics-services
+Authorization: Bearer {{loginRequest.response.body.access_token}}
+Accept: application/json
+
+### List TLS Client Profiles
+GET {{platform_api}}/api/orgs/{{org}}/tls-client-profiles
+Authorization: Bearer {{loginRequest.response.body.access_token}}
+Accept: application/json
+
+
+# ─────────────────────────────────────────────
+# API MANAGER
+# ─────────────────────────────────────────────
+
+### List Provider Orgs
+GET {{platform_api}}/api/orgs?org_type=provider
+Authorization: Bearer {{loginRequest.response.body.access_token}}
+Accept: application/json
+
+### List Catalogs (replace {porg} with provider org name)
+# GET {{platform_api}}/api/orgs/{porg}/catalogs
+# Authorization: Bearer {{loginRequest.response.body.access_token}}
+
+
+# ─────────────────────────────────────────────
+# GATEWAY (DataPower)
+# ─────────────────────────────────────────────
+
+### Gateway v6 - Status
+GET {{gateway_manager}}/mgmt/status/main
+Authorization: Basic YWRtaW46YWRtaW4=
+
+### AI Gateway - Status
+GET {{ai_gw_manager}}/mgmt/status/main
+Authorization: Basic YWRtaW46YWRtaW4=

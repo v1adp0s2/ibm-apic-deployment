@@ -14,14 +14,14 @@ spec:
     annotations:
       cert-manager.io/issuer: ingress-issuer
     hosts:
-    - name: admin-devportal-apic.talos-pc.zebra-cloud.net
+    - name: admin-devportal-apic.demo01.mea-presales.org
       secretName: devportal-admin-endpoint
   devportalUIEndpoint:
     ingressClassName: contour
     annotations:
       cert-manager.io/issuer: ingress-issuer
     hosts:
-    - name: devportal-apic.talos-pc.zebra-cloud.net
+    - name: devportal-apic.demo01.mea-presales.org
       secretName: devportal-ui-endpoint
   analyticsRef:
     name: analytics

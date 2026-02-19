@@ -35,35 +35,35 @@ spec:
     annotations:
       cert-manager.io/issuer: ingress-issuer
     hosts:
-    - name: admin-apic.talos-pc.zebra-cloud.net
+    - name: admin-apic.demo01.mea-presales.org
       secretName: cm-endpoint
   apiManagerEndpoint:
     ingressClassName: contour
     annotations:
       cert-manager.io/issuer: ingress-issuer
     hosts:
-    - name: manager-apic.talos-pc.zebra-cloud.net
+    - name: manager-apic.demo01.mea-presales.org
       secretName: apim-endpoint
   consumerCatalogEndpoint:
     ingressClassName: contour
     annotations:
       cert-manager.io/issuer: ingress-issuer
     hosts:
-    - name: consumer-catalog-apic.talos-pc.zebra-cloud.net
+    - name: consumer-catalog-apic.demo01.mea-presales.org
       secretName: consumer-catalog-endpoint
   platformAPIEndpoint:
     ingressClassName: contour
     annotations:
       cert-manager.io/issuer: ingress-issuer
     hosts:
-    - name: api-apic.talos-pc.zebra-cloud.net
+    - name: api-apic.demo01.mea-presales.org
       secretName: api-endpoint
   consumerAPIEndpoint:
     ingressClassName: contour
     annotations:
       cert-manager.io/issuer: ingress-issuer
     hosts:
-    - name: consumer-apic.talos-pc.zebra-cloud.net
+    - name: consumer-apic.demo01.mea-presales.org
       secretName: consumer-endpoint
   databaseVolumeClaimTemplate:
     storageClassName: nfs-ssd

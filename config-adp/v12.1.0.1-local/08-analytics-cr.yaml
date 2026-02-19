@@ -22,7 +22,7 @@ spec:
       annotations:
         cert-manager.io/issuer: ingress-issuer
       hosts:
-      - name: ai.apic.talos-pc.zebra-cloud.net
+      - name: ai.apic.demo01.mea-presales.org
         secretName: analytics-ai-endpoint
     clientSubjectDN: CN=analytics-ingestion-client,O=cert-manager
   mtlsValidateClient: true

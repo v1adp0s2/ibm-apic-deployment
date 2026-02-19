@@ -13,14 +13,14 @@ spec:
     annotations:
       cert-manager.io/issuer: ingress-issuer
     hosts:
-    - name: api.portal.apic.talos-pc.zebra-cloud.net
+    - name: api.portal.apic.demo01.mea-presales.org
       secretName: portal-admin
   portalUIEndpoint:
     ingressClassName: contour
     annotations:
       cert-manager.io/issuer: ingress-issuer
     hosts:
-    - name: portal.apic.talos-pc.zebra-cloud.net
+    - name: portal.apic.demo01.mea-presales.org
       secretName: portal-web
   databaseVolumeClaimTemplate:
     storageClassName: nfs-ssd

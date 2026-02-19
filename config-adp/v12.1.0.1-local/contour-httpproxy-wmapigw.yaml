@@ -6,7 +6,7 @@ metadata:
   namespace: apic
 spec:
   virtualhost:
-    fqdn: wmapigw-ui.apic.talos-pc.zebra-cloud.net
+    fqdn: wmapigw-ui.apic.demo01.mea-presales.org
     tls:
       secretName: wmapigw-mgmt-endpoint
   routes:
@@ -24,7 +24,7 @@ metadata:
   namespace: apic
 spec:
   virtualhost:
-    fqdn: wmapigw.apic.talos-pc.zebra-cloud.net
+    fqdn: wmapigw.apic.demo01.mea-presales.org
     tls:
       secretName: wmapigw-gateway-endpoint
   routes:

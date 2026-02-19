@@ -16,14 +16,14 @@ Based on the deployment:
 - **Gateway Service**: `https://gwv6.apic.svc:443`
 
 ### External Ingress Endpoints
-- **Management Endpoint**: `https://rgwd.apic.talos-pc.zebra-cloud.net`
-- **API Gateway Endpoint**: `https://rgw.apic.talos-pc.zebra-cloud.net`
+- **Management Endpoint**: `https://rgwd.apic.demo01.mea-presales.org`
+- **API Gateway Endpoint**: `https://rgw.apic.demo01.mea-presales.org`
 
 ## Registration Steps
 
 ### Step 1: Access Cloud Manager
 
-1. Navigate to Cloud Manager at: `https://admin.apic.talos-pc.zebra-cloud.net`
+1. Navigate to Cloud Manager at: `https://admin.apic.demo01.mea-presales.org`
 2. Login with admin credentials
 
 ### Step 2: Navigate to Topology
@@ -43,12 +43,12 @@ Fill in the following configuration:
 
 #### Management Endpoint
 - **Management Endpoint**: `https://gwv6.apic.svc:3000`
-  - Alternative: Use external endpoint `https://rgwd.apic.talos-pc.zebra-cloud.net`
+  - Alternative: Use external endpoint `https://rgwd.apic.demo01.mea-presales.org`
 - **TLS Client Profile**: Select `Gateway management client TLS client profile:1.0.0`
   - This profile contains the certificates to authenticate with DataPower
 
 #### API Endpoints
-- **API Endpoint Base**: `https://rgw.apic.talos-pc.zebra-cloud.net`
+- **API Endpoint Base**: `https://rgw.apic.demo01.mea-presales.org`
   - This is the endpoint where API traffic will be routed
 - **SNI Hostname**: `*` (wildcard to accept all SNI hostnames)
   - Or specify specific hostname if required
@@ -99,12 +99,12 @@ cd /Volumes/Data/Users/vladimir/git/ibm/demos/ibm-apic-deployment/config-adp/v12
 
 # List gateway services
 ./apic gateway-services:list \
-  --server api.apic.talos-pc.zebra-cloud.net \
+  --server api.apic.demo01.mea-presales.org \
   --org admin
 
 # Get details of DataPower gateway
 ./apic gateway-services:get datapower-api-gateway \
-  --server api.apic.talos-pc.zebra-cloud.net \
+  --server api.apic.demo01.mea-presales.org \
   --org admin
 ```
 
@@ -135,7 +135,7 @@ export KUBECONFIG=/Volumes/Data/Users/vladimir/git/ibm/demos/ibm-apic-deployment
 kubectl exec -it deployment/management-apic-apim -n apic -- curl -k https://gwv6.apic.svc:3000/healthcheck
 
 # Check external connectivity
-curl -k https://rgwd.apic.talos-pc.zebra-cloud.net/healthcheck
+curl -k https://rgwd.apic.demo01.mea-presales.org/healthcheck
 ```
 
 2. **Check DataPower logs**:
@@ -166,11 +166,11 @@ After successful registration, you'll have two gateway services:
 
 1. **webMethods Gateway** (`local-wm-gateway`)
    - Use for: Standard APIs, integration services
-   - Endpoint: `https://wmagw.apic.talos-pc.zebra-cloud.net`
+   - Endpoint: `https://wmagw.apic.demo01.mea-presales.org`
 
 2. **DataPower Gateway** (`datapower-api-gateway`)
    - Use for: AI workloads, high-performance APIs
-   - Endpoint: `https://rgw.apic.talos-pc.zebra-cloud.net`
+   - Endpoint: `https://rgw.apic.demo01.mea-presales.org`
 
 ### Assigning Gateways to Catalogs
 

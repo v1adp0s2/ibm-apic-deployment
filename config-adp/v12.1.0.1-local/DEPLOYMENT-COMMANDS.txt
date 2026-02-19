@@ -135,7 +135,7 @@ kubectl get ingress -n apic
 kubectl get httpproxy -n apic
 
 # 2.10 Test endpoint connectivity (example)
-curl -vk https://admin.apic.talos-pc.zebra-cloud.net/admin
+curl -vk https://admin.apic.demo01.mea-presales.org/admin
 
 ================================================================================
 SECTION 3: COMPONENT RESET PROCEDURES
@@ -422,49 +422,49 @@ kubectl get svc -n projectcontour envoy
 kubectl describe svc -n projectcontour envoy
 
 # 5.20 Test DNS resolution
-kubectl run -it --rm debug-dns --image=busybox --restart=Never -- nslookup admin.apic.talos-pc.zebra-cloud.net
+kubectl run -it --rm debug-dns --image=busybox --restart=Never -- nslookup admin.apic.demo01.mea-presales.org
 
 ================================================================================
 SECTION 6: ENDPOINT URLS
 ================================================================================
 
 Cloud Manager (Management):
-  https://admin.apic.talos-pc.zebra-cloud.net/admin
+  https://admin.apic.demo01.mea-presales.org/admin
   Username: admin
   Initial Password: Admin123! (change on first login)
 
 API Manager:
-  https://manager.apic.talos-pc.zebra-cloud.net/manager
+  https://manager.apic.demo01.mea-presales.org/manager
 
 Platform API:
-  https://api.apic.talos-pc.zebra-cloud.net
+  https://api.apic.demo01.mea-presales.org
 
 Consumer API:
-  https://consumer.apic.talos-pc.zebra-cloud.net
+  https://consumer.apic.demo01.mea-presales.org
 
 Consumer Catalog:
-  https://consumer-catalog.apic.talos-pc.zebra-cloud.net
+  https://consumer-catalog.apic.demo01.mea-presales.org
 
 Gateway:
-  https://rgw.apic.talos-pc.zebra-cloud.net
+  https://rgw.apic.demo01.mea-presales.org
 
 Gateway Manager:
-  https://rgwd.apic.talos-pc.zebra-cloud.net
+  https://rgwd.apic.demo01.mea-presales.org
 
 Portal Admin:
-  https://api.portal.apic.talos-pc.zebra-cloud.net
+  https://api.portal.apic.demo01.mea-presales.org
 
 Portal Web:
-  https://portal.apic.talos-pc.zebra-cloud.net
+  https://portal.apic.demo01.mea-presales.org
 
 Analytics Ingestion:
-  https://ai.apic.talos-pc.zebra-cloud.net
+  https://ai.apic.demo01.mea-presales.org
 
 Contour LoadBalancer IP:
   10.20.221.222
 
 DNS Wildcard:
-  *.talos-pc.zebra-cloud.net -> 10.20.221.222
+  *.demo01.mea-presales.org -> 10.20.221.222
 
 ================================================================================
 SECTION 7: COMMON MAINTENANCE TASKS

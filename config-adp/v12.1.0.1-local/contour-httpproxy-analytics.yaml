@@ -7,7 +7,7 @@ metadata:
   namespace: apic
 spec:
   virtualhost:
-    fqdn: ai-apic.talos-pc.zebra-cloud.net
+    fqdn: ai-apic.demo01.mea-presales.org
     tls:
       secretName: analytics-ai-endpoint
   routes:

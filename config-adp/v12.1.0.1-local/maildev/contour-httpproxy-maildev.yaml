@@ -6,7 +6,7 @@ metadata:
   namespace: apic
 spec:
   virtualhost:
-    fqdn: maildev-apic.talos-pc.zebra-cloud.net
+    fqdn: maildev-apic.demo01.mea-presales.org
   routes:
   - conditions:
     - prefix: /

@@ -21,7 +21,7 @@
    - Close and enter your password to save
 
 4. **Restart Brave** and access:
-   - https://wmapigw-ui.apic.talos-pc.zebra-cloud.net
+   - https://wmapigw-ui.apic.demo01.mea-presales.org
    - Brave should automatically use the certificate
 
 ## Option 2: Direct Access via Port Forward

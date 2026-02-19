@@ -3,7 +3,7 @@
 ## Prerequisites Verified
 
 - apic CLI location: `/Volumes/Data/Users/vladimir/git/ibm/demos/ibm-apic-deployment/config-adp/v12.1.0.1-local/apic-toolkit/apic`
-- Management endpoint: `api.apic.talos-pc.zebra-cloud.net`
+- Management endpoint: `api.apic.demo01.mea-presales.org`
 - Admin password: `Admin123!`
 - All services use INTERNAL endpoints (`.apic.svc`)
 
@@ -15,7 +15,7 @@ Since gateway registration via CLI requires complex TLS server profile setup, us
 
 ### Access Cloud Manager
 
-Open: `https://admin.apic.talos-pc.zebra-cloud.net/admin`
+Open: `https://admin.apic.demo01.mea-presales.org/admin`
 - Username: `admin`
 - Password: `Admin123!`
 
@@ -57,7 +57,7 @@ Open: `https://admin.apic.talos-pc.zebra-cloud.net/admin`
 
 ```bash
 export APIC=/Volumes/Data/Users/vladimir/git/ibm/demos/ibm-apic-deployment/config-adp/v12.1.0.1-local/apic-toolkit/apic
-export SERVER="api.apic.talos-pc.zebra-cloud.net"
+export SERVER="api.apic.demo01.mea-presales.org"
 export ORG="admin"
 export AZ="availability-zone-default"
 
@@ -69,7 +69,7 @@ $APIC login \
   --insecure-skip-tls-verify
 ```
 
-**Expected output:** `Logged into api.apic.talos-pc.zebra-cloud.net successfully`
+**Expected output:** `Logged into api.apic.demo01.mea-presales.org successfully`
 
 ### Step 2: Create Truststore (TESTED - WORKING)
 
@@ -99,7 +99,7 @@ $APIC truststores:create \
   ~/apic-certs/truststore.yaml
 ```
 
-**Save the truststore URL from output** (e.g., `https://api.apic.talos-pc.zebra-cloud.net/api/orgs/.../truststores/...`)
+**Save the truststore URL from output** (e.g., `https://api.apic.demo01.mea-presales.org/api/orgs/.../truststores/...`)
 
 ### Step 3: Create TLS Client Profile (TESTED - WORKING)
 
@@ -278,7 +278,7 @@ kubectl delete pod gwv6-0 -n apic  # Restart to pick up new CA
 
 ### Login fails
 - Verify management is running: `kubectl get managementcluster -n apic`
-- Check endpoint: `curl -k https://admin.apic.talos-pc.zebra-cloud.net/admin`
+- Check endpoint: `curl -k https://admin.apic.demo01.mea-presales.org/admin`
 
 ### Gateway registration fails with certificate hostname mismatch
 
@@ -289,7 +289,7 @@ kubectl delete pod gwv6-0 -n apic  # Restart to pick up new CA
 The certificate only includes these SANs:
 - `gwv6.apic.svc` ✅
 - `gwv6.apic.svc.cluster.local` ✅
-- `rgwd.apic.talos-pc.zebra-cloud.net` (external)
+- `rgwd.apic.demo01.mea-presales.org` (external)
 
 **Correct endpoints:**
 - Management: `https://gwv6.apic.svc:443`
@@ -316,7 +316,7 @@ The certificate only includes these SANs:
 
 ## Access Cloud Manager
 
-URL: `https://admin.apic.talos-pc.zebra-cloud.net/admin`
+URL: `https://admin.apic.demo01.mea-presales.org/admin`
 - Username: `admin`
 - Password: `Admin123!`
 

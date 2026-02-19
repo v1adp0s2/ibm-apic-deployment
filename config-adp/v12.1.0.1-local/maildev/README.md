@@ -49,7 +49,7 @@ kubectl get svc -n apic -l app=maildev
 
 ## Access
 
-- **Web UI**: http://maildev-apic.talos-pc.zebra-cloud.net
+- **Web UI**: http://maildev-apic.demo01.mea-presales.org
 - **SMTP Server** (internal): maildev-smtp.apic.svc.cluster.local:25
 
 ## Configure API Connect
@@ -85,13 +85,13 @@ The MailDev web interface provides:
 
 ```bash
 # Get all emails
-curl http://maildev-apic.talos-pc.zebra-cloud.net/email
+curl http://maildev-apic.demo01.mea-presales.org/email
 
 # Get specific email
-curl http://maildev-apic.talos-pc.zebra-cloud.net/email/{id}
+curl http://maildev-apic.demo01.mea-presales.org/email/{id}
 
 # Delete all emails
-curl -X DELETE http://maildev-apic.talos-pc.zebra-cloud.net/email/all
+curl -X DELETE http://maildev-apic.demo01.mea-presales.org/email/all
 ```
 
 ## Use Cases
