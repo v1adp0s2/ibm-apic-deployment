@@ -39,11 +39,11 @@ echo "Token: $TOKEN"
 
 # Get admin org URL
 curl -sk https://${APIC_MGMT_PLATFORM_API_HOST}/api/orgs/admin \
-  -H "Authorization: Bearer $TOKEN" | python3 -m json.tool | grep '"url"'
+  -H "Authorization: Bearer $TOKEN" | jq -r '.url'
 
 # Get availability zone
 curl -sk "https://${APIC_MGMT_PLATFORM_API_HOST}/api/orgs/admin/availability-zones" \
-  -H "Authorization: Bearer $TOKEN" | python3 -m json.tool | grep '"name"\|"url"'
+  -H "Authorization: Bearer $TOKEN" | jq '.results[] | {name, url}'
 
 ================================================================================
 0. PREREQUISITE: UPLOAD CA CERTIFICATES TO MANAGEMENT (DO THIS FIRST!)
@@ -242,7 +242,7 @@ UI Steps:
 
 Verify (API):
 curl -sk "https://${APIC_MGMT_PLATFORM_API_HOST}/api/orgs/admin/availability-zones/availability-zone-default/analytics-services" \
-  -H "Authorization: Bearer $TOKEN" | python3 -m json.tool | grep '"name"\|"endpoint"\|"status"'
+  -H "Authorization: Bearer $TOKEN" | jq '.results[] | {name, endpoint, status}'
 
 ================================================================================
 2. REGISTER wM DEVELOPER PORTAL (webMethods DevPortal)
@@ -265,7 +265,7 @@ UI Steps:
 
 Verify (API):
 curl -sk "https://${APIC_MGMT_PLATFORM_API_HOST}/api/orgs/admin/availability-zones/availability-zone-default/portal-services" \
-  -H "Authorization: Bearer $TOKEN" | python3 -m json.tool | grep '"name"\|"endpoint"\|"status"'
+  -H "Authorization: Bearer $TOKEN" | jq '.results[] | {name, endpoint, status}'
 
 TROUBLESHOOTING:
   "unable to verify the first certificate" → devportal-ca not trusted. Complete STEP 2A above.
@@ -304,7 +304,7 @@ UI Steps:
 
 Verify (API):
 curl -sk "https://${APIC_MGMT_PLATFORM_API_HOST}/api/orgs/admin/availability-zones/availability-zone-default/gateway-services" \
-  -H "Authorization: Bearer $TOKEN" | python3 -m json.tool | grep '"name"\|"endpoint"\|"status"'
+  -H "Authorization: Bearer $TOKEN" | jq '.results[] | {name, endpoint, status}'
 
 ================================================================================
 4. REGISTER AI DATAPOWER GATEWAY
@@ -330,18 +330,18 @@ POST-REGISTRATION: VERIFY ALL SERVICES
 # Check all services are Online via API
 echo "=== Analytics Services ==="
 curl -sk "https://${APIC_MGMT_PLATFORM_API_HOST}/api/orgs/admin/availability-zones/availability-zone-default/analytics-services" \
-  -H "Authorization: Bearer $TOKEN" | python3 -m json.tool | grep '"title"\|"status"'
+  -H "Authorization: Bearer $TOKEN" | jq '.results[] | {title, status}'
 
 echo "=== Gateway Services ==="
 curl -sk "https://${APIC_MGMT_PLATFORM_API_HOST}/api/orgs/admin/availability-zones/availability-zone-default/gateway-services" \
-  -H "Authorization: Bearer $TOKEN" | python3 -m json.tool | grep '"title"\|"status"'
+  -H "Authorization: Bearer $TOKEN" | jq '.results[] | {title, status}'
 
 echo "=== Portal Services ==="
 curl -sk "https://${APIC_MGMT_PLATFORM_API_HOST}/api/orgs/admin/availability-zones/availability-zone-default/portal-services" \
-  -H "Authorization: Bearer $TOKEN" | python3 -m json.tool | grep '"title"\|"status"'
+  -H "Authorization: Bearer $TOKEN" | jq '.results[] | {title, status}'
 
 # Full topology
 curl -sk "https://${APIC_MGMT_PLATFORM_API_HOST}/api/cloud/topology" \
-  -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
+  -H "Authorization: Bearer $TOKEN" | jq '.'
 
 ================================================================================
