@@ -9,3 +9,4 @@
 *.tar.gz
 talos
 *.docx
+**/*.pem

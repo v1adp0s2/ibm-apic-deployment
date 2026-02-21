@@ -1,0 +1,36 @@
+================================================================================
+APIC PACKAGE DESTRUCTION LOG (OPTIMIZED FAST-PATH)
+================================================================================
+Package:    v12.1.0.1-v3
+Namespace:  ibm-apic
+Cluster:    admin@talos-proxmox-cluster
+Start Time: $(date '+%Y-%m-%d %H:%M:%S')
+================================================================================
+
+
+================================================================================
+DESTROY SUMMARY (OPTIMIZED FAST-PATH)
+================================================================================
+Execution time: 1771585774 seconds
+
+Deletion strategy:
+  [FAST-DELETE]  35 CRDs deleted (cascading all CRs)
+  [OK]           13 HTTPProxy resources deleted
+  [SKIP]         PVC data wipe skipped (user requested)
+  [OK]           6 PVCs deleted
+  [OK]           Operators deleted
+  [OK]           Namespace deleted
+
+Verification:
+  [CLEAN]        Namespace: Not found (deleted)
+  [CLEAN]        CRDs: None remaining
+  [CLEAN]        Orphaned PVs: None
+
+--------------------------------------------------------------------------------
+RESULT:  CLEAN
+--------------------------------------------------------------------------------
+All resources successfully removed from cluster.
+Namespace 'ibm-apic' no longer exists.
+
+Note: PVC data was NOT wiped. NFS storage may still contain data.
+================================================================================

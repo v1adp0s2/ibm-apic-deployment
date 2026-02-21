@@ -13,17 +13,28 @@ Register all sub-components in this order:
 API-BASED REGISTRATION (using Platform API + curl)
 ================================================================================
 
-# First, get an access token
-TOKEN=$(curl -sk -X POST https://${APIC_MGMT_PLATFORM_API_HOST}/api/token \
+# Extract OAuth client credentials from cluster (management-cli-cred secret)
+# NOTE: Use management-cli-cred (NOT management-ccli-cred which is for consumer toolkit)
+CLIENT_ID=$(kubectl get secret management-cli-cred -n ${APIC_NAMESPACE} \
+  -o jsonpath='{.data.credential\.json}' | base64 -d | jq -r '.id')
+CLIENT_SECRET=$(kubectl get secret management-cli-cred -n ${APIC_NAMESPACE} \
+  -o jsonpath='{.data.credential\.json}' | base64 -d | jq -r '.secret')
+
+echo "Client ID: $CLIENT_ID"
+echo "Client Secret: $CLIENT_SECRET"
+
+# Get an access token
+TOKEN=$(curl -sk -X POST "https://${APIC_MGMT_PLATFORM_API_HOST}/api/token" \
   -H "Content-Type: application/json" \
-  -d '{
-    "grant_type": "password",
-    "username": "admin",
-    "password": "${APIC_MGMT_ADMIN_PASSWORD}",
-    "realm": "admin/default-idp-1",
-    "client_id": "aa166ee3-2502-44bc-bebc-bd5e787150c5",
-    "client_secret": "bec0153c-bee9-4eb3-94e4-08b2fa43cf62"
-  }' | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+  -d "$(jq -n \
+    --arg grant_type "password" \
+    --arg username "admin" \
+    --arg password "${APIC_MGMT_ADMIN_PASSWORD}" \
+    --arg realm "admin/default-idp-1" \
+    --arg client_id "${CLIENT_ID}" \
+    --arg client_secret "${CLIENT_SECRET}" \
+    '{grant_type: $grant_type, username: $username, password: $password, realm: $realm, client_id: $client_id, client_secret: $client_secret}')" \
+  | jq -r '.access_token')
 echo "Token: $TOKEN"
 
 # Get admin org URL
@@ -46,6 +57,88 @@ any services.
 Required CA certificates:
   - ingress-ca: Signs certificates for Analytics, wM Gateway, AI Gateway
   - devportal-ca: Signs certificates for Developer Portal internal services
+
+--------------------------------------------------------------------------------
+OPTION A: Hybrid Approach - Create via API, Upload via UI (RECOMMENDED)
+--------------------------------------------------------------------------------
+
+This approach combines API automation for truststore creation with manual
+certificate upload via UI to avoid known API bugs with certificate entries.
+
+STEP A1: Create truststores via Platform API
+----------------------------------------------
+
+# Get access token (see API-BASED REGISTRATION section above for TOKEN setup)
+
+# Create ingress-ca truststore
+curl -sk -X POST "https://${APIC_MGMT_PLATFORM_API_HOST}/api/orgs/admin/truststores" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "ingress-ca-truststore",
+    "title": "Ingress CA Truststore",
+    "summary": "Truststore for ingress-ca (Analytics, Gateways)"
+  }'
+
+# Create devportal-ca truststore
+curl -sk -X POST "https://${APIC_MGMT_PLATFORM_API_HOST}/api/orgs/admin/truststores" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "devportal-ca-truststore",
+    "title": "DevPortal CA Truststore",
+    "summary": "Truststore for devportal-ca (Developer Portal)"
+  }'
+
+STEP A2: Download CA certificates from cluster
+-----------------------------------------------
+
+# Extract ingress-ca certificate (PEM format)
+kubectl get secret ingress-ca -n ${APIC_NAMESPACE} \
+  -o jsonpath='{.data.ca\.crt}' | base64 -d > ingress-ca.pem
+
+# Extract devportal-ca certificate (PEM format)
+kubectl get secret devportal-ca -n ${APIC_NAMESPACE} \
+  -o jsonpath='{.data.ca\.crt}' | base64 -d > devportal-ca.pem
+
+# Verify PEM format
+openssl x509 -in ingress-ca.pem -noout -subject -issuer
+openssl x509 -in devportal-ca.pem -noout -subject -issuer
+
+STEP A3: Upload certificates via Cloud Manager UI
+--------------------------------------------------
+
+1. Login to Cloud Manager:
+   URL: https://${APIC_MGMT_ADMIN_HOST}/admin
+   Username: admin
+   Password: ${APIC_MGMT_ADMIN_PASSWORD}
+
+2. Navigate to: Resources → TLS → Keystores and truststores tab
+
+3. Upload certificate to Ingress CA Truststore:
+   - Find "Ingress CA Truststore" in the list
+   - Click on the truststore name
+   - Click "Upload certificate" or "Add certificate" button
+   - Select ingress-ca.pem file
+   - Click "Save"
+   - Status should show "Valid"
+
+4. Upload certificate to DevPortal CA Truststore:
+   - Find "DevPortal CA Truststore" in the list
+   - Click on the truststore name
+   - Click "Upload certificate" or "Add certificate" button
+   - Select devportal-ca.pem file
+   - Click "Save"
+   - Status should show "Valid"
+
+Then proceed to STEP 0.3 below to configure TLS client profiles.
+
+--------------------------------------------------------------------------------
+OPTION B: Manual Upload via Cloud Manager UI (Fully Manual)
+--------------------------------------------------------------------------------
+
+Follow steps 0.1-0.3 below to manually create truststores and upload certificates
+through the UI without using the API.
 
 --------------------------------------------------------------------------------
 STEP 0.1: Extract CA Certificates from Cluster
