@@ -43,8 +43,8 @@ Benefits:
 
 Required Environment Variables:
   - APIC_NAMESPACE           (e.g., ibm-apic)
-  - APIC_DOMAIN_BASE         (e.g., demo01.mea-presales.org)
-  - APIC_IMAGE_REGISTRY      (e.g., harbor.talos.zebra-cloud.net/apic)
+  - APIC_DOMAIN_BASE         (e.g., adp.example.com)
+  - APIC_IMAGE_REGISTRY      (e.g., harbor.adp.example.com/apic)
   - APIC_STORAGE_CLASS       (e.g., nfs-ssd)
 
 The templates use ${VARIABLE_NAME} syntax for substitution.
@@ -71,15 +71,12 @@ STEP 2: Deploy MailDev to Kubernetes
 
 cd utilities/maildev
 
-# Set environment variables (required for envsubst)
-# Note: If config.env has CRLF issues, set these manually:
-export APIC_NAMESPACE=ibm-apic
-export APIC_DOMAIN_BASE=demo01.mea-presales.org
-export APIC_IMAGE_REGISTRY=harbor.talos.zebra-cloud.net/apic
-export APIC_STORAGE_CLASS=nfs-ssd
-
-# Or source config.env if it's been converted to LF line endings:
+# Set environment variables manually or source config.env:
 # source ../../config.env
+export APIC_NAMESPACE=ibm-apic
+export APIC_DOMAIN_BASE=adp.example.com
+export APIC_IMAGE_REGISTRY=harbor.adp.example.com/apic
+export APIC_STORAGE_CLASS=nfs-ssd
 
 # Deploy MailDev resources (PVC, Deployment, Services)
 envsubst < maildev-deployment.yaml.template | kubectl apply -f -

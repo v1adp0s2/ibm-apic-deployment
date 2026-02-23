@@ -11,7 +11,10 @@ spec:
     tls:
       secretName: cm-endpoint
   routes:
-  - services:
+  - timeoutPolicy:
+      response: 120s
+      idle: 120s
+    services:
     - name: management-juhu
       port: 2005
       protocol: tls
@@ -20,6 +23,8 @@ spec:
         subjectName: management-juhu.${APIC_NAMESPACE}.svc.cluster.local
 ---
 # API Manager
+# NOTE: 300s timeout required — portal site creation (configured-portal-services)
+#       is a long-running operation that exceeds Contour's default 60s timeout.
 apiVersion: projectcontour.io/v1
 kind: HTTPProxy
 metadata:
@@ -31,7 +36,10 @@ spec:
     tls:
       secretName: apim-endpoint
   routes:
-  - services:
+  - timeoutPolicy:
+      response: 300s
+      idle: 300s
+    services:
     - name: management-juhu
       port: 2006
       protocol: tls
@@ -51,7 +59,10 @@ spec:
     tls:
       secretName: api-endpoint
   routes:
-  - services:
+  - timeoutPolicy:
+      response: 120s
+      idle: 120s
+    services:
     - name: management-juhu
       port: 2000
       protocol: tls
@@ -71,7 +82,10 @@ spec:
     tls:
       secretName: consumer-endpoint
   routes:
-  - services:
+  - timeoutPolicy:
+      response: 120s
+      idle: 120s
+    services:
     - name: management-juhu
       port: 2001
       protocol: tls
@@ -91,7 +105,10 @@ spec:
     tls:
       secretName: consumer-catalog-endpoint
   routes:
-  - services:
+  - timeoutPolicy:
+      response: 120s
+      idle: 120s
+    services:
     - name: management-juhu
       port: 2013
       protocol: tls

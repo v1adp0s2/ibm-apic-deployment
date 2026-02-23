@@ -35,7 +35,7 @@ TOKEN=$(curl -sk -X POST "https://${APIC_MGMT_PLATFORM_API_HOST}/api/token" \
     --arg client_secret "${CLIENT_SECRET}" \
     '{grant_type: $grant_type, username: $username, password: $password, realm: $realm, client_id: $client_id, client_secret: $client_secret}')" \
   | jq -r '.access_token')
-echo "Token: $TOKEN"
+echo "Token: ${TOKEN:0:50}..."
 
 # Get admin org URL
 curl -sk https://${APIC_MGMT_PLATFORM_API_HOST}/api/orgs/admin \

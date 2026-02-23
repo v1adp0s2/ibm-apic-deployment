@@ -33,8 +33,8 @@ envsubst < template.yaml.template | kubectl apply -f -
 
 **Required Environment Variables:**
 - `APIC_NAMESPACE` - Kubernetes namespace (e.g., ibm-apic)
-- `APIC_DOMAIN_BASE` - Base domain (e.g., demo01.mea-presales.org)
-- `APIC_IMAGE_REGISTRY` - Container registry (e.g., harbor.talos.zebra-cloud.net/apic)
+- `APIC_DOMAIN_BASE` - Base domain (e.g., adp.example.com)
+- `APIC_IMAGE_REGISTRY` - Container registry (e.g., harbor.adp.example.com/apic)
 - `APIC_STORAGE_CLASS` - Storage class (e.g., nfs-ssd)
 
 ## Quick Start
@@ -56,8 +56,8 @@ cd utilities/maildev
 
 # Set environment variables
 export APIC_NAMESPACE=ibm-apic
-export APIC_DOMAIN_BASE=demo01.mea-presales.org
-export APIC_IMAGE_REGISTRY=harbor.talos.zebra-cloud.net/apic
+export APIC_DOMAIN_BASE=adp.example.com
+export APIC_IMAGE_REGISTRY=harbor.adp.example.com/apic
 export APIC_STORAGE_CLASS=nfs-ssd
 
 # Deploy MailDev

@@ -1,0 +1,178 @@
+================================================================================
+REGISTER ANALYTICS SERVICE — INTRA-CLUSTER GUIDE
+================================================================================
+Service:    AnalyticsCluster (CR name: analytics)
+Endpoint:   https://analytics.${APIC_NAMESPACE}.svc  (ClusterIP :443)
+TLS:        Server cert signed by ingress-ca  |  mTLS: YES (client CN required)
+Profile:    analytics-ingestion-default
+
+PREREQUISITE: TOKEN must be set. See REGISTER-SERVICES.txt → API-BASED REGISTRATION.
+
+================================================================================
+STEP 1 — EXTRACT THE CA CERTIFICATE FROM THE CLUSTER
+================================================================================
+
+# The analytics server cert is signed by ingress-ca.
+# Management must trust ingress-ca to verify the analytics TLS connection.
+
+kubectl get secret ingress-ca -n ${APIC_NAMESPACE} \
+  -o jsonpath='{.data.ca\.crt}' | base64 -d > ingress-ca.pem
+
+# Verify the certificate
+openssl x509 -in ingress-ca.pem -noout -subject -issuer -dates
+# Expected:
+#   subject=CN=ingress-ca
+#   issuer=CN=ingress-ca  (self-signed CA)
+
+================================================================================
+STEP 2 — EXTRACT THE CLIENT CERTIFICATE (mTLS)
+================================================================================
+
+# Analytics requires the management cluster to present a client certificate
+# with subject DN: CN=analytics-ingestion-client,O=cert-manager
+# This cert is stored in the analytics-ingestion-client secret.
+
+kubectl get secret analytics-ingestion-client -n ${APIC_NAMESPACE} \
+  -o jsonpath='{.data.tls\.crt}' | base64 -d > analytics-ingestion-client.crt
+
+kubectl get secret analytics-ingestion-client -n ${APIC_NAMESPACE} \
+  -o jsonpath='{.data.tls\.key}' | base64 -d > analytics-ingestion-client.key
+
+# Bundle as P12 for Cloud Manager keystore upload
+openssl pkcs12 -export \
+  -in analytics-ingestion-client.crt \
+  -inkey analytics-ingestion-client.key \
+  -out analytics-ingestion-client.p12 \
+  -name analytics-ingestion-client \
+  -passout pass:changeme
+
+# Verify subject DN matches what analytics expects
+openssl x509 -in analytics-ingestion-client.crt -noout -subject
+# Expected: subject=CN=analytics-ingestion-client, O=cert-manager
+
+================================================================================
+STEP 3 — CONFIGURE CLOUD MANAGER: CREATE TRUSTSTORE
+================================================================================
+
+Cloud Manager URL: https://${APIC_MGMT_ADMIN_HOST}/admin
+
+Navigate to: Resources → TLS → Keystores and truststores tab
+
+[ If not already created — create the Ingress CA Truststore ]
+
+  Create → Truststore
+  ┌─────────────────────────────────────────────────────────┐
+  │ Title:       Ingress CA Truststore                      │
+  │ Description: Truststore for ingress-ca (Analytics,      │
+  │              Gateways)                                  │
+  │ Certificate: Upload ingress-ca.pem                      │
+  └─────────────────────────────────────────────────────────┘
+  Save → Status must show: Valid
+
+OR via API:
+curl -sk -X POST "https://${APIC_MGMT_PLATFORM_API_HOST}/api/orgs/admin/truststores" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"ingress-ca-truststore","title":"Ingress CA Truststore","summary":"ingress-ca (Analytics, Gateways)"}' | jq .
+# Then upload ingress-ca.pem via UI (Resources → TLS → Ingress CA Truststore → Upload certificate)
+
+================================================================================
+STEP 4 — CONFIGURE CLOUD MANAGER: CREATE KEYSTORE (mTLS CLIENT CERT)
+================================================================================
+
+Navigate to: Resources → TLS → Keystores and truststores tab
+
+  Create → Keystore
+  ┌─────────────────────────────────────────────────────────┐
+  │ Title:       Analytics Ingestion Client                 │
+  │ Description: Client cert for mTLS to Analytics service  │
+  │ Upload:      analytics-ingestion-client.p12             │
+  │ Password:    changeme  (or whatever you set above)      │
+  └─────────────────────────────────────────────────────────┘
+  Save → Status must show: Valid
+
+================================================================================
+STEP 5 — CONFIGURE CLOUD MANAGER: TLS CLIENT PROFILE
+================================================================================
+
+Navigate to: Resources → TLS → TLS client profiles tab
+
+  Find or create: analytics-ingestion-default
+  ┌─────────────────────────────────────────────────────────┐
+  │ Title:     analytics-ingestion-default                  │
+  │ Keystore:  Analytics Ingestion Client       ← mTLS      │
+  │ Truststore: Ingress CA Truststore           ← trust svc │
+  └─────────────────────────────────────────────────────────┘
+  Save
+
+OR via API:
+# Resolve keystore and truststore URLs first, then create the profile
+KEYSTORE_URL=$(curl -sk "https://${APIC_MGMT_PLATFORM_API_HOST}/api/orgs/admin/keystores" \
+  -H "Authorization: Bearer $TOKEN" \
+  | jq -r '.results[] | select(.title=="Analytics Ingestion Client") | .url')
+
+TRUSTSTORE_URL=$(curl -sk "https://${APIC_MGMT_PLATFORM_API_HOST}/api/orgs/admin/truststores" \
+  -H "Authorization: Bearer $TOKEN" \
+  | jq -r '.results[] | select(.title=="Ingress CA Truststore") | .url')
+
+curl -sk -X POST "https://${APIC_MGMT_PLATFORM_API_HOST}/api/orgs/admin/tls-client-profiles" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "$(jq -n \
+    --arg name  "analytics-ingestion-default" \
+    --arg title "analytics-ingestion-default" \
+    --arg ks    "$KEYSTORE_URL" \
+    --arg ts    "$TRUSTSTORE_URL" \
+    '{name:$name, title:$title, keystore_url:$ks, truststore_url:$ts}')" | jq .
+
+================================================================================
+STEP 6 — REGISTER ANALYTICS SERVICE IN CLOUD MANAGER
+================================================================================
+
+Navigate to: Topology → Infrastructure → Analytics Services → Register Service
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ Title:             Analytics                            │
+  │ Ingestion endpoint: https://analytics.${APIC_NAMESPACE}.svc │
+  │ TLS Client Profile: analytics-ingestion-default         │
+  └─────────────────────────────────────────────────────────┘
+  Save → Status must show: Online
+
+================================================================================
+STEP 7 — VERIFY
+================================================================================
+
+# Check registration status via API
+curl -sk "https://${APIC_MGMT_PLATFORM_API_HOST}/api/orgs/admin/availability-zones/availability-zone-default/analytics-services" \
+  -H "Authorization: Bearer $TOKEN" | jq '.results[] | {name, title, endpoint, state}'
+
+# Expected: "state": "ready"
+
+# Test TLS connectivity directly from management pod
+kubectl exec -n ${APIC_NAMESPACE} deployment/management-apim -- sh -c \
+  "echo '' | openssl s_client -connect analytics.${APIC_NAMESPACE}.svc:443 \
+  -servername analytics.${APIC_NAMESPACE}.svc 2>&1 | grep -E '(subject=|issuer=|Verify return)'"
+# Expected:
+#   subject=...analytics...
+#   issuer=CN=ingress-ca
+#   Verify return code: 0 (ok)
+
+================================================================================
+TROUBLESHOOTING
+================================================================================
+
+"503 / TLS handshake failed"
+  → Truststore not set or ingress-ca not uploaded. Repeat STEP 3.
+
+"403 / client certificate required"
+  → mTLS client cert not configured. Repeat STEP 4 and STEP 5.
+
+"certificate verify failed"
+  → Wrong CA in truststore. Confirm ingress-ca.pem issuer matches analytics server cert issuer.
+
+"status: offline after registration"
+  → Check analytics pods are ready:
+    kubectl get pods -n ${APIC_NAMESPACE} -l app.kubernetes.io/name=analytics
+    kubectl logs -n ${APIC_NAMESPACE} -l app.kubernetes.io/name=analytics --tail=50
+
+================================================================================
