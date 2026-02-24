@@ -26,6 +26,13 @@ DEPLOY
 # 1. Deploy Analytics CR (Note: devPortalMode is enabled by default)
 envsubst < analytics-cr.yaml.template | kubectl apply -f -
 
+# WORKAROUND: If webhook validation fails with "imagePullSecrets: Not found",
+# deploy without imagePullSecrets first, then patch after pods start:
+# envsubst < analytics-cr.yaml.template | sed '/imagePullSecrets:/,+1d' | kubectl apply -f -
+# kubectl patch analyticscluster analytics -n ${APIC_NAMESPACE} --type='json' \
+#   -p='[{"op": "add", "path": "/spec/imagePullSecrets", "value": ["harbor-registry-secret"]}]'
+# kubectl delete pod analytics-storage-0 -n ${APIC_NAMESPACE}  # Restart pod to use imagePullSecret
+
 # 2. Watch status (ctrl+c when phase = Running, takes 10–15 min)
 kubectl get analyticscluster -n ${APIC_NAMESPACE} -w
 

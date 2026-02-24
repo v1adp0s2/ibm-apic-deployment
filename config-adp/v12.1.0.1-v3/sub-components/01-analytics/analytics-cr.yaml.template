@@ -2,6 +2,7 @@ apiVersion: analytics.apiconnect.ibm.com/v1beta1
 kind: AnalyticsCluster
 metadata:
   name: analytics
+  namespace: ${APIC_NAMESPACE}
 spec:
   version: 12.1.0.1
   license:

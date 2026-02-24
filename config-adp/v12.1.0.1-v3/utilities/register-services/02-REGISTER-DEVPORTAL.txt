@@ -256,7 +256,216 @@ CONFIGURE VIA PLATFORM API:
     -H "Authorization: Bearer $TOKEN" | jq '{mail_server_host, mail_server_port, mail_server_secure, email_sender}'
 
 ================================================================================
-STEP 7 — REGISTER DEVELOPER PORTAL SERVICE IN CLOUD MANAGER
+STEP 7 — CONFIGURE DEVPORTAL TO TRUST MANAGEMENT CA
+================================================================================
+
+ISSUE: DevPortal proxy (Node.js) makes HTTPS calls to Management service for
+webhook registration at https://management-juhu.${APIC_NAMESPACE}.svc:2000.
+However, Management's TLS certificate is signed by management-ca, which DevPortal
+does not trust by default (DevPortal uses devportal-ca for its own certificates).
+
+SYMPTOM: DevPortal proxy logs show:
+  "Error: unable to verify the first certificate"
+  "Unexpected error while calling https://management-juhu.${APIC_NAMESPACE}.svc:2000/api/cloud/webhooks/..."
+
+ROOT CAUSE: Both Management and DevPortal use the selfsigning-issuer (selfSigned: {})
+which creates separate self-signed CAs for each subsystem:
+  - Management gets: management-ca
+  - DevPortal gets: devportal-ca
+There is no cross-CA trust established between these subsystems.
+
+WORKAROUND OPTIONS:
+
+  Option 1: Configure a shared CA issuer (RECOMMENDED for production)
+  -----------------------------------------------------------------------
+  Instead of using selfSigned issuers, create a shared CA issuer that all
+  subsystems use. This requires redeploying Management and DevPortal with
+  the same CA issuer reference.
+
+  Steps:
+  1. Create a CA Certificate and Issuer:
+
+     cat <<EOF | kubectl apply -f -
+     apiVersion: cert-manager.io/v1
+     kind: Certificate
+     metadata:
+       name: apic-shared-ca
+       namespace: ${APIC_NAMESPACE}
+     spec:
+       isCA: true
+       commonName: apic-shared-ca
+       secretName: apic-shared-ca-secret
+       duration: 87600h  # 10 years
+       renewBefore: 8760h  # 1 year
+       issuerRef:
+         name: selfsigning-issuer
+         kind: Issuer
+     ---
+     apiVersion: cert-manager.io/v1
+     kind: Issuer
+     metadata:
+       name: apic-ca-issuer
+       namespace: ${APIC_NAMESPACE}
+     spec:
+       ca:
+         secretName: apic-shared-ca-secret
+     EOF
+
+  2. Update Management and DevPortal CRs to use apic-ca-issuer:
+
+     kubectl patch managementcluster management -n ${APIC_NAMESPACE} --type merge \
+       -p '{"spec":{"certManagerIssuer":{"name":"apic-ca-issuer","kind":"Issuer"}}}'
+
+     kubectl patch devportalcluster devportal -n ${APIC_NAMESPACE} --type merge \
+       -p '{"spec":{"certManagerIssuer":{"name":"apic-ca-issuer","kind":"Issuer"}}}'
+
+  3. Restart subsystems to regenerate certificates with shared CA
+
+  Option 2: Manual CA injection into DevPortal proxy container (TEMPORARY)
+  -------------------------------------------------------------------------
+  This is a temporary workaround that does not survive pod restarts. Use only
+  for testing or while preparing Option 1.
+
+  1. Extract management-ca certificate:
+
+     kubectl get secret management-ca -n ${APIC_NAMESPACE} \
+       -o jsonpath='{.data.ca\.crt}' | base64 -d > /tmp/management-ca.crt
+
+  2. Copy management-ca into DevPortal proxy container:
+
+     PROXY_POD=$(kubectl get pod -n ${APIC_NAMESPACE} \
+       -l app.kubernetes.io/name=proxy,app.kubernetes.io/instance=devportal \
+       -o jsonpath='{.items[0].metadata.name}')
+
+     kubectl cp /tmp/management-ca.crt \
+       ${APIC_NAMESPACE}/${PROXY_POD}:/tmp/management-ca.crt -c proxy
+
+  3. Exec into proxy container and add to Node.js trust store:
+
+     kubectl exec -n ${APIC_NAMESPACE} ${PROXY_POD} -c proxy -- sh -c \
+       "cat /tmp/management-ca.crt >> /etc/ssl/certs/ca-certificates.crt"
+
+  4. Restart proxy pod to pick up changes:
+
+     kubectl delete pod ${PROXY_POD} -n ${APIC_NAMESPACE}
+
+  Option 3: Configure NODE_EXTRA_CA_CERTS via DevPortal operator (UNTESTED)
+  --------------------------------------------------------------------------
+  If the DevPortal operator supports custom environment variables or volume
+  mounts for additional CAs, this would be the cleanest approach without
+  changing the issuer. However, this capability is not documented in v12.1.0.1.
+
+  Potential approach (requires operator support):
+  - Create ConfigMap with management-ca certificate
+  - Mount ConfigMap as volume in proxy container
+  - Set NODE_EXTRA_CA_CERTS environment variable to point to mounted CA file
+
+  This would require changes to the DevPortalCluster CR spec that may not
+  be available in the current operator version.
+
+  Option 4: Disable TLS verification (TEMPORARY - DEV/TEST ONLY)
+  ---------------------------------------------------------------
+  WARNING: This option disables ALL certificate verification and should ONLY
+  be used for development/testing environments. NOT for production.
+
+  This approach resolves all certificate trust issues by disabling TLS
+  verification at five points:
+  1. DevPortal proxy → Management (Node.js)
+  2. Management APIM → DevPortal (Node.js)
+  3. Management Portal Proxy → DevPortal (Node.js) - handles service registration
+  4. Management Juhu → DevPortal (Node.js) - handles webhook endpoints
+  5. Ingress proxy → DevPortal backend (Envoy)
+
+  Steps:
+
+  a) Disable TLS verification in DevPortal proxy:
+
+     kubectl patch deployment devportal-proxy -n ${APIC_NAMESPACE} --type=json -p='[
+       {
+         "op": "add",
+         "path": "/spec/template/spec/containers/1/env/-",
+         "value": {
+           "name": "NODE_TLS_REJECT_UNAUTHORIZED",
+           "value": "0"
+         }
+       }
+     ]'
+
+     kubectl rollout status deployment/devportal-proxy -n ${APIC_NAMESPACE}
+
+  b) Disable TLS verification in Management APIM:
+
+     kubectl patch deployment management-apim -n ${APIC_NAMESPACE} --type=json -p='[
+       {
+         "op": "add",
+         "path": "/spec/template/spec/containers/0/env/-",
+         "value": {
+           "name": "NODE_TLS_REJECT_UNAUTHORIZED",
+           "value": "0"
+         }
+       }
+     ]'
+
+     kubectl rollout status deployment/management-apim -n ${APIC_NAMESPACE}
+
+  c) Disable TLS verification in Management Portal Proxy (for service registration):
+
+     kubectl patch deployment management-portal-proxy -n ${APIC_NAMESPACE} --type=json -p='[
+       {
+         "op": "add",
+         "path": "/spec/template/spec/containers/0/env/-",
+         "value": {
+           "name": "NODE_TLS_REJECT_UNAUTHORIZED",
+           "value": "0"
+         }
+       }
+     ]'
+
+     kubectl rollout status deployment/management-portal-proxy -n ${APIC_NAMESPACE}
+
+  d) Disable TLS verification in Management Juhu (for webhook endpoints):
+
+     kubectl patch deployment management-juhu -n ${APIC_NAMESPACE} --type=json -p='[
+       {
+         "op": "add",
+         "path": "/spec/template/spec/containers/0/env/-",
+         "value": {
+           "name": "NODE_TLS_REJECT_UNAUTHORIZED",
+           "value": "0"
+         }
+       }
+     ]'
+
+     kubectl rollout status deployment/management-juhu -n ${APIC_NAMESPACE}
+
+  e) Disable backend TLS validation in Ingress HTTPProxy:
+
+     kubectl patch httpproxy devportal-web -n ${APIC_NAMESPACE} --type=json -p='[
+       {
+         "op": "remove",
+         "path": "/spec/routes/0/services/0/validation"
+       }
+     ]'
+
+  IMPORTANT WARNINGS:
+  - These patches may be lost if operators reconcile deployments
+  - Setting NODE_TLS_REJECT_UNAUTHORIZED=0 makes all TLS connections insecure
+  - No certificate validation = vulnerable to man-in-the-middle attacks
+  - Backend still uses TLS encryption but without certificate verification
+
+  Use Option 1 (Shared CA Issuer) for production deployments.
+
+VERIFICATION:
+
+After applying any workaround, verify DevPortal proxy can reach Management:
+
+  kubectl logs -n ${APIC_NAMESPACE} -l app.kubernetes.io/name=proxy,app.kubernetes.io/instance=devportal --tail=50
+
+  # Should NOT see "unable to verify the first certificate" errors
+  # Should see successful webhook registration messages
+
+================================================================================
+STEP 8 — REGISTER DEVELOPER PORTAL SERVICE IN CLOUD MANAGER
 ================================================================================
 
 Navigate to: Topology → Infrastructure → Portal Services → Register Service
@@ -278,7 +487,7 @@ Navigate to: Topology → Infrastructure → Portal Services → Register Servic
   └─────────────────────────────────────────────────────────────────┘
 
 ================================================================================
-STEP 8 — VERIFY
+STEP 9 — VERIFY
 ================================================================================
 
 # Check registration status via API
@@ -301,7 +510,9 @@ TROUBLESHOOTING
 ================================================================================
 
 "unable to verify the first certificate"
-  → devportal-ca not in truststore. Repeat STEP 3.
+  → Two possible causes:
+    1. Management → DevPortal: devportal-ca not in Management truststore. Repeat STEP 3.
+    2. DevPortal → Management: DevPortal proxy cannot verify management-ca. See STEP 7.
 
 "400 The SSL certificate error"
   → DevPortal proxy rejected the client cert. Root cause: devportal-admin-client
@@ -353,8 +564,50 @@ TROUBLESHOOTING
     kubectl get pods -n ${APIC_NAMESPACE} -l app.kubernetes.io/name=devportal
     kubectl logs -n ${APIC_NAMESPACE} -l app.kubernetes.io/name=devportal --tail=50
 
+"Authentication finally failed" in analytics-storage logs
+  → DevPortal cannot authenticate to analytics-storage backend using dev_portal_user.
+    Root cause: Password not synchronized from Kubernetes secret to OpenSearch internal users.
+
+    Symptom: Query OpenSearch internal users shows empty hash:
+
+    kubectl exec -n ${APIC_NAMESPACE} analytics-storage-0 -c storage -- \
+      curl -sk 'https://localhost:9202/_plugins/_security/api/internalusers/dev_portal_user' \
+      --cert /etc/velox/certs/admin/tls.crt \
+      --key /etc/velox/certs/admin/tls.key \
+      --cacert /etc/velox/certs/admin/ca.crt | jq -r '.dev_portal_user.hash'
+    # If output is empty ("") → password not hashed
+
+    Fix — manually hash password and update via Security API:
+
+    # 1. Retrieve password from secret
+    PASSWORD=$(kubectl get secret analytics-devportal-user -n ${APIC_NAMESPACE} \
+      -o jsonpath='{.data.password}' | base64 -d)
+
+    # 2. Generate bcrypt hash using OpenSearch hash.sh tool
+    HASH=$(kubectl exec -n ${APIC_NAMESPACE} analytics-storage-0 -c storage -- \
+      /usr/share/opensearch/plugins/opensearch-security/tools/hash.sh -p "$PASSWORD")
+
+    # 3. Update user with hashed password via Security API
+    kubectl exec -n ${APIC_NAMESPACE} analytics-storage-0 -c storage -- \
+      curl -sk -X PUT 'https://localhost:9202/_plugins/_security/api/internalusers/dev_portal_user' \
+      -H 'Content-Type: application/json' \
+      --cert /etc/velox/certs/admin/tls.crt \
+      --key /etc/velox/certs/admin/tls.key \
+      --cacert /etc/velox/certs/admin/ca.crt \
+      -d "{\"hash\":\"${HASH}\",\"backend_roles\":[\"portal_role\"]}"
+
+    # 4. Verify authentication works
+    kubectl exec -n ${APIC_NAMESPACE} analytics-storage-0 -c storage -- \
+      curl -sk -u "dev_portal_user:${PASSWORD}" 'https://localhost:9202/_cat/indices' 2>&1
+    # Expected: 403 Forbidden (authentication succeeded, permission denied is expected)
+    # If you see "Authentication finally failed" → hash still empty, repeat step 3
+
+    Note: This is a known issue where password synchronization from Kubernetes secrets
+    to OpenSearch internal users database doesn't happen automatically. The password
+    hash must be manually updated after analytics-storage initialization.
+
 ================================================================================
-STEP 4-B — RECREATE KEYSTORE AFTER CERT RE-ISSUANCE
+STEP 10 — RECREATE KEYSTORE AFTER CERT RE-ISSUANCE
 ================================================================================
 
 Run this after fixing the devportal-admin-client cert (re-issued with devportal-ca issuer).

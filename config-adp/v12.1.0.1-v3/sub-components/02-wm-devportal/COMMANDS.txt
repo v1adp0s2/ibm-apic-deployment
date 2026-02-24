@@ -174,6 +174,67 @@ kubectl get all -n ${APIC_NAMESPACE} -l app.kubernetes.io/instance=devportal
 kubectl get pvc -n ${APIC_NAMESPACE} | grep devportal
 
 ================================================================================
+KNOWN ISSUE: DevPortal Proxy Cannot Verify Management CA
+================================================================================
+
+SYMPTOM:
+DevPortal proxy logs show certificate verification errors when trying to reach Management:
+  kubectl logs -n ${APIC_NAMESPACE} -l app.kubernetes.io/name=proxy,app.kubernetes.io/instance=devportal --tail=50 | grep "unable to verify"
+
+  "Error: unable to verify the first certificate"
+  "Unexpected error while calling https://management-juhu.${APIC_NAMESPACE}.svc:2000/api/cloud/webhooks/..."
+
+ROOT CAUSE:
+Both Management and DevPortal use selfsigning-issuer, which creates separate self-signed CAs:
+  - Management subsystem gets: management-ca
+  - DevPortal subsystem gets: devportal-ca
+
+When DevPortal proxy (Node.js) makes HTTPS calls to Management service for webhook
+registration, it cannot verify Management's TLS certificate because it doesn't trust
+management-ca.
+
+SOLUTION:
+See detailed workarounds in:
+  ${PWD}/../../utilities/register-services/02-REGISTER-DEVPORTAL.txt → STEP 7
+
+Quick verification:
+  # Check if DevPortal proxy is having certificate issues
+  kubectl logs -n ${APIC_NAMESPACE} -l app.kubernetes.io/name=proxy,app.kubernetes.io/instance=devportal --tail=50
+
+  # Should NOT see "unable to verify the first certificate" if properly configured
+
+RECOMMENDED FIX:
+Use a shared CA issuer for all subsystems (see STEP 7 Option 1 in registration guide).
+This ensures all internal communications work without additional trust configuration.
+
+TEMPORARY WORKAROUND (DEV/TEST ONLY):
+If you need a quick temporary solution for development/testing, you can disable
+TLS verification at five points (see STEP 7 Option 4 for detailed commands):
+
+  1. DevPortal proxy → Management: NODE_TLS_REJECT_UNAUTHORIZED=0
+     kubectl patch deployment devportal-proxy -n ${APIC_NAMESPACE} --type=json \
+       -p='[{"op":"add","path":"/spec/template/spec/containers/1/env/-","value":{"name":"NODE_TLS_REJECT_UNAUTHORIZED","value":"0"}}]'
+
+  2. Management APIM → DevPortal: NODE_TLS_REJECT_UNAUTHORIZED=0
+     kubectl patch deployment management-apim -n ${APIC_NAMESPACE} --type=json \
+       -p='[{"op":"add","path":"/spec/template/spec/containers/0/env/-","value":{"name":"NODE_TLS_REJECT_UNAUTHORIZED","value":"0"}}]'
+
+  3. Management Portal Proxy → DevPortal (service registration): NODE_TLS_REJECT_UNAUTHORIZED=0
+     kubectl patch deployment management-portal-proxy -n ${APIC_NAMESPACE} --type=json \
+       -p='[{"op":"add","path":"/spec/template/spec/containers/0/env/-","value":{"name":"NODE_TLS_REJECT_UNAUTHORIZED","value":"0"}}]'
+
+  4. Management Juhu → DevPortal (webhook endpoints): NODE_TLS_REJECT_UNAUTHORIZED=0
+     kubectl patch deployment management-juhu -n ${APIC_NAMESPACE} --type=json \
+       -p='[{"op":"add","path":"/spec/template/spec/containers/0/env/-","value":{"name":"NODE_TLS_REJECT_UNAUTHORIZED","value":"0"}}]'
+
+  5. Ingress → DevPortal backend: Remove TLS validation
+     kubectl patch httpproxy devportal-web -n ${APIC_NAMESPACE} --type=json \
+       -p='[{"op":"remove","path":"/spec/routes/0/services/0/validation"}]'
+
+WARNING: This disables ALL certificate verification - NOT for production use!
+Patches may be lost if operators reconcile. Use shared CA issuer for production.
+
+================================================================================
 POST-DEPLOYMENT: REGISTER IN APIC CLOUD MANAGER
 ================================================================================
 
