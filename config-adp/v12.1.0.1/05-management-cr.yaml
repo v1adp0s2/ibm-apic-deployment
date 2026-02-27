@@ -50,6 +50,15 @@ spec:
   databaseLogVolumeClaimTemplate:
     storageClassName: STORAGE_CLASS_PLACEHOLDER
     volumeSize: 2Gi
+  dbArchiveVolumeClaimTemplate:
+    storageClassName: STORAGE_CLASS_PLACEHOLDER
+    volumeSize: 50Gi
+  dbBackupVolumeClaimTemplate:
+    storageClassName: STORAGE_CLASS_PLACEHOLDER
+    volumeSize: 50Gi
+  messageQueueVolumeClaimTemplate:
+    storageClassName: STORAGE_CLASS_PLACEHOLDER
+    volumeSize: 10Gi
   license:
     accept: true
     use: nonproduction
