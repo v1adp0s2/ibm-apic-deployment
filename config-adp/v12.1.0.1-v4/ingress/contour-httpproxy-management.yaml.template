@@ -1,0 +1,117 @@
+---
+# Cloud Manager
+apiVersion: projectcontour.io/v1
+kind: HTTPProxy
+metadata:
+  name: management-admin
+  namespace: ${APIC_NAMESPACE}
+spec:
+  virtualhost:
+    fqdn: ${APIC_MGMT_ADMIN_HOST}
+    tls:
+      secretName: cm-endpoint
+  routes:
+  - timeoutPolicy:
+      response: 120s
+      idle: 120s
+    services:
+    - name: management-juhu
+      port: 2005
+      protocol: tls
+      validation:
+        caSecret: management-ca
+        subjectName: management-juhu.${APIC_NAMESPACE}.svc.cluster.local
+---
+# API Manager
+# NOTE: 300s timeout required — portal site creation (configured-portal-services)
+#       is a long-running operation that exceeds Contour's default 60s timeout.
+apiVersion: projectcontour.io/v1
+kind: HTTPProxy
+metadata:
+  name: management-api-manager
+  namespace: ${APIC_NAMESPACE}
+spec:
+  virtualhost:
+    fqdn: ${APIC_MGMT_MANAGER_HOST}
+    tls:
+      secretName: apim-endpoint
+  routes:
+  - timeoutPolicy:
+      response: 300s
+      idle: 300s
+    services:
+    - name: management-juhu
+      port: 2006
+      protocol: tls
+      validation:
+        caSecret: management-ca
+        subjectName: management-juhu.${APIC_NAMESPACE}.svc.cluster.local
+---
+# Platform API
+apiVersion: projectcontour.io/v1
+kind: HTTPProxy
+metadata:
+  name: management-platform-api
+  namespace: ${APIC_NAMESPACE}
+spec:
+  virtualhost:
+    fqdn: ${APIC_MGMT_PLATFORM_API_HOST}
+    tls:
+      secretName: api-endpoint
+  routes:
+  - timeoutPolicy:
+      response: 120s
+      idle: 120s
+    services:
+    - name: management-juhu
+      port: 2000
+      protocol: tls
+      validation:
+        caSecret: management-ca
+        subjectName: management-juhu.${APIC_NAMESPACE}.svc.cluster.local
+---
+# Consumer API
+apiVersion: projectcontour.io/v1
+kind: HTTPProxy
+metadata:
+  name: management-consumer-api
+  namespace: ${APIC_NAMESPACE}
+spec:
+  virtualhost:
+    fqdn: ${APIC_MGMT_CONSUMER_API_HOST}
+    tls:
+      secretName: consumer-endpoint
+  routes:
+  - timeoutPolicy:
+      response: 120s
+      idle: 120s
+    services:
+    - name: management-juhu
+      port: 2001
+      protocol: tls
+      validation:
+        caSecret: management-ca
+        subjectName: management-juhu.${APIC_NAMESPACE}.svc.cluster.local
+---
+# Consumer Catalog
+apiVersion: projectcontour.io/v1
+kind: HTTPProxy
+metadata:
+  name: management-consumer-catalog
+  namespace: ${APIC_NAMESPACE}
+spec:
+  virtualhost:
+    fqdn: ${APIC_MGMT_CONSUMER_CATALOG_HOST}
+    tls:
+      secretName: consumer-catalog-endpoint
+  routes:
+  - timeoutPolicy:
+      response: 120s
+      idle: 120s
+    services:
+    - name: management-juhu
+      port: 2013
+      protocol: tls
+      validation:
+        caSecret: management-ca
+        subjectName: management-juhu.${APIC_NAMESPACE}.svc.cluster.local

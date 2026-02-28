@@ -1,0 +1,38 @@
+apiVersion: wmapigateway.apiconnect.ibm.com/v1beta1
+kind: WMAPIGatewayCluster
+metadata:
+  name: wmapigw
+spec:
+  version: 12.1.0.1
+  profile: n1xc3.m6
+  imagePullSecrets:
+  - harbor-registry-secret
+  imageRegistry: ${APIC_IMAGE_REGISTRY}
+  gatewayEndpoint:
+    ingressClassName: ${APIC_INGRESS_CLASS}
+    annotations:
+      cert-manager.io/issuer: ingress-issuer
+    hosts:
+    - name: ${APIC_WM_GATEWAY_HOST}
+      secretName: wmapigw-gateway-endpoint
+  mgmtEndpoint:
+    ingressClassName: ${APIC_INGRESS_CLASS}
+    annotations:
+      cert-manager.io/issuer: ingress-issuer
+    hosts:
+    - name: ${APIC_WM_GATEWAY_UI_HOST}
+      secretName: wmapigw-mgmt-endpoint
+  storage:
+    volumeClaimTemplate:
+      storageClassName: ${APIC_STORAGE_CLASS}
+      volumeSize: 30Gi
+  encryptionSecret:
+    secretName: wmapigateway-enc-key
+  adminUser:
+    secretName: wmapigateway-admin-secret
+  mgmtClientSubjectDN: CN=management-client
+  license:
+    accept: true
+    use: nonproduction
+    metric: MONTHLY_API_CALL
+    license: L-SBZZ-CNR329

@@ -1,0 +1,81 @@
+================================================================================
+APIC PACKAGE TEST REPORT
+================================================================================
+Package:    /Volumes/Data/Users/vladimir/git/ibm/demos/ibm-apic-deployment/config-adp/v12.1.0.1-v3
+Index:      v12.1.0.1-v3 - IBM API Connect v12.1.0.1 on Kubernetes (8 phases)
+Date/Time:  2026-02-19 19:32:36
+Cluster:    admin@talos-proxmox-cluster
+User:       admin@talos-proxmox-cluster
+Namespace:  apic (from INDEX.yaml environment.namespace)
+================================================================================
+
+PREREQUISITES CHECK
+===================
+
+[PASS] cert-manager pods are Running
+
+[PASS] Contour LoadBalancer has EXTERNAL-IP: 10.20.221.222
+
+[PASS] Storage classes available: nfs-ssd (default), blob-storage, blob-storage-s3, openebs-device, openebs-hostpath
+
+================================================================================
+PHASE CHECKS
+================================================================================
+
+Phase 1: config - Configuration Setup
+[SKIP] This is a configuration phase, no deployment to check
+
+Phase 2: core - Core (Management)
+[SKIP] Namespace 'apic' not found - no deployment present
+  Command: kubectl get managementcluster -n apic
+  Output: Error from server (NotFound): namespaces "apic" not found
+
+Phase 3: analytics - Analytics  
+[SKIP] Namespace 'apic' not found - no deployment present
+  Command: kubectl get analyticscluster -n apic
+  Output: Error from server (NotFound): namespaces "apic" not found
+
+Phase 4: wm-devportal - wM Developer Portal
+[SKIP] Namespace 'apic' not found - no deployment present (also depends on analytics which is skipped)
+  Command: kubectl get devportalcluster -n apic
+  Output: Error from server (NotFound): namespaces "apic" not found
+
+Phase 5: wm-gateway - wM API Gateway
+[SKIP] Namespace 'apic' not found - no deployment present
+  Command: kubectl get wmapigatewaycluster -n apic
+  Output: Error from server (NotFound): namespaces "apic" not found
+
+Phase 6: ai-gateway - AI DataPower Gateway
+[SKIP] Namespace 'apic' not found - no deployment present
+  Command: kubectl get gatewaycluster ai-gateway -n apic
+  Output: Error from server (NotFound): namespaces "apic" not found
+
+Phase 7: ingress - Ingress (HTTPProxy)
+[SKIP] Namespace 'apic' not found - no deployment present
+  Command: kubectl get httpproxy -n apic
+  Output: Error from server (NotFound): namespaces "apic" not found
+
+Phase 8: registration - Service Registration
+[SKIP] Namespace 'apic' not found - no deployment present, cannot check service registrations
+
+================================================================================
+SUMMARY
+================================================================================
+[SKIP]  config        - Configuration Setup
+[SKIP]  core          - Core (Management)
+[SKIP]  analytics     - Analytics
+[SKIP]  wm-devportal  - wM Developer Portal
+[SKIP]  wm-gateway    - wM API Gateway
+[SKIP]  ai-gateway    - AI DataPower Gateway
+[SKIP]  ingress       - Ingress (HTTPProxy)
+[SKIP]  registration  - Service Registration
+--------------------------------------------------------------------------------
+OVERALL: SKIP (No deployment found - namespace 'apic' does not exist)
+--------------------------------------------------------------------------------
+The package is not currently deployed in the cluster. All phases were skipped
+because the target namespace 'apic' was not found.
+
+To deploy this package, follow the instructions in:
+  - /Volumes/Data/Users/vladimir/git/ibm/demos/ibm-apic-deployment/config-adp/v12.1.0.1-v3/00-START-HERE.txt
+  - /Volumes/Data/Users/vladimir/git/ibm/demos/ibm-apic-deployment/config-adp/v12.1.0.1-v3/core/DEPLOY-CORE.txt
+================================================================================

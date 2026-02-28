@@ -1,0 +1,263 @@
+================================================================================
+SUB-COMPONENT: webMethods Developer Portal
+================================================================================
+CR Kind:     DevPortalCluster
+CR Name:     devportal
+Namespace:   ${APIC_NAMESPACE}
+Endpoints:
+  DevPortal Admin: https://${APIC_DEVPORTAL_ADMIN_HOST}
+  DevPortal UI:    https://${APIC_DEVPORTAL_UI_HOST}
+
+PREREQUISITE: Core deployment (Management) must be Running.
+              Analytics sub-component must be deployed first (analyticsRef in CR).
+
+IMPORTANT NOTE on Admin Endpoint TLS:
+  The admin endpoint uses TLS PASSTHROUGH at the ingress (see ingress/05-devportal-httpproxy.yaml).
+  This is required for mTLS — the Management plane sends the devportal-admin-client
+  certificate directly to the devportal-proxy backend on port 4443.
+  When registering in Cloud Manager, use TLS profile: portal-api-admin-default
+
+================================================================================
+REQUIRED SECRETS (create before deploying CR)
+================================================================================
+
+# DevPortal encryption key
+kubectl create secret generic devportal-enc-key \
+  --namespace=${APIC_NAMESPACE} \
+  --from-literal=encryption_secret=$(openssl rand -base64 32)
+
+# Verify auto-created mTLS certs from 04-ingress-issuer.yaml
+kubectl get secret devportal-admin-client -n ${APIC_NAMESPACE}
+# If missing, re-apply prerequisites:
+# kubectl apply -f ../../core/02-prerequisites/04-ingress-issuer.yaml -n ${APIC_NAMESPACE}
+
+================================================================================
+DEPLOY
+================================================================================
+
+# 1. Ensure Analytics is already deployed (DevPortal requires analyticsRef)
+kubectl get analyticscluster analytics -n ${APIC_NAMESPACE}
+# Must show phase=Running before proceeding
+
+# 2. Ensure encryption secret exists
+kubectl get secret devportal-enc-key -n ${APIC_NAMESPACE} || \
+  kubectl create secret generic devportal-enc-key \
+    --namespace=${APIC_NAMESPACE} \
+    --from-literal=encryption_secret=$(openssl rand -base64 32)
+
+# 3. Deploy DevPortal CR
+kubectl apply -f devportal-cr.yaml -n ${APIC_NAMESPACE}
+
+# 4. Watch status (ctrl+c when phase = Running, takes 10–15 min)
+kubectl get devportalcluster -n ${APIC_NAMESPACE} -w
+
+# 5. Monitor pods coming up
+kubectl get pods -n ${APIC_NAMESPACE} -l app.kubernetes.io/instance=devportal -w
+
+# 6. Apply HTTPProxy ingress (TLS passthrough for admin, TLS termination for UI)
+envsubst < ../../ingress/contour-httpproxy-devportal.yaml.template | kubectl apply -f -
+
+# 7. Verify HTTPProxy resources
+kubectl get httpproxy -n ${APIC_NAMESPACE} devportal-admin devportal-web
+
+================================================================================
+GET-DEPLOYMENT STATUS
+================================================================================
+
+# Subsystem status
+kubectl get devportalcluster -n ${APIC_NAMESPACE}
+kubectl get devportalcluster devportal -n ${APIC_NAMESPACE} -o jsonpath='{.status.phase}'
+
+# Pod status
+kubectl get pods -n ${APIC_NAMESPACE} -l app.kubernetes.io/instance=devportal
+
+# Describe CR for full status and conditions
+kubectl describe devportalcluster devportal -n ${APIC_NAMESPACE}
+
+# Subsystem conditions (shows Warnings/Errors)
+kubectl get devportalcluster devportal -n ${APIC_NAMESPACE} -o jsonpath='{.status.conditions}' | python3 -m json.tool
+
+# HTTPProxy status
+kubectl get httpproxy -n ${APIC_NAMESPACE} devportal-admin devportal-web
+
+# All devportal services
+kubectl get svc -n ${APIC_NAMESPACE} | grep devportal
+
+# TLS certificates
+kubectl get certificate -n ${APIC_NAMESPACE} | grep devportal
+kubectl get secret -n ${APIC_NAMESPACE} | grep devportal
+
+# Analytics connectivity (check system-check job)
+kubectl get jobs -n ${APIC_NAMESPACE} | grep system-check
+kubectl logs -n ${APIC_NAMESPACE} job/$(kubectl get jobs -n ${APIC_NAMESPACE} | grep system-check | tail -1 | awk '{print $1}')
+
+================================================================================
+IMPORTANT: certManagerIssuer Must Be selfsigning-issuer
+================================================================================
+
+The DevPortal CR MUST use certManagerIssuer: selfsigning-issuer (NOT ingress-issuer).
+Using ingress-issuer causes devportal-ca to be signed by ingress-ca instead of
+being self-signed, which fails the system-check with:
+  "Incorrect issuer detected on certificate 'devportal-ca'. Issuer: 'CN=ingress-ca',
+   ExpectedIssuer: 'CN=devportal-ca'"
+
+If you see this error after deploying:
+  1. Patch the CR (if deployed with wrong value):
+     kubectl patch devportalcluster devportal -n ${APIC_NAMESPACE} --type=merge \
+       -p '{"spec":{"certManagerIssuer":{"name":"selfsigning-issuer","kind":"Issuer"}}}'
+  2. Force renew the internal certs (new CA won't automatically re-sign old certs):
+     kubectl delete secret devportal-server devportal-client -n ${APIC_NAMESPACE}
+     kubectl wait --for=condition=Ready certificate/devportal-server -n ${APIC_NAMESPACE} --timeout=60s
+     kubectl wait --for=condition=Ready certificate/devportal-client -n ${APIC_NAMESPACE} --timeout=60s
+  3. Run system-check manually:
+     kubectl create job --from=cronjob/devportal-system-check \
+       devportal-check-$(date +%s) -n ${APIC_NAMESPACE}
+     kubectl logs -n ${APIC_NAMESPACE} job/devportal-check-* --tail=20
+  4. DevPortal should transition to Running within a few minutes.
+
+================================================================================
+DEBUG
+================================================================================
+
+# DevPortal proxy logs (handles admin mTLS)
+kubectl logs -n ${APIC_NAMESPACE} -l app.kubernetes.io/name=proxy,app.kubernetes.io/instance=devportal --tail=100
+
+# DevPortal main component logs
+kubectl logs -n ${APIC_NAMESPACE} -l app.kubernetes.io/name=devportal,app.kubernetes.io/instance=devportal --tail=100
+
+# DevPortal director logs
+kubectl logs -n ${APIC_NAMESPACE} -l app.kubernetes.io/name=director,app.kubernetes.io/instance=devportal --tail=100
+
+# Check what's on proxy port 4443 (admin mTLS endpoint)
+kubectl exec -n ${APIC_NAMESPACE} $(kubectl get pod -n ${APIC_NAMESPACE} -l app.kubernetes.io/name=proxy,app.kubernetes.io/instance=devportal -o name | head -1) \
+  -- ss -tlnp | grep 4443
+
+# Test admin endpoint connectivity (should require mTLS client cert)
+echo "" | openssl s_client -connect ${APIC_DEVPORTAL_ADMIN_HOST}:443 \
+  -servername ${APIC_DEVPORTAL_ADMIN_HOST} 2>/dev/null | \
+  openssl x509 -noout -subject -issuer
+
+# Test UI endpoint
+curl -sk -o /dev/null -w "%{http_code}" https://${APIC_DEVPORTAL_UI_HOST}
+# Expected: 200 or 302
+
+# Check management-apim logs for portal registration errors
+kubectl logs -n ${APIC_NAMESPACE} deployment/management-apim --tail=100 | grep -i "portal\|devportal"
+
+# Check analytics system-check for devportal connectivity
+kubectl get cronjob -n ${APIC_NAMESPACE} | grep system-check
+kubectl create job --from=cronjob/$(kubectl get cronjob -n ${APIC_NAMESPACE} -o name | grep system | cut -d'/' -f2) \
+  system-check-manual-$(date +%s) -n ${APIC_NAMESPACE}
+
+# Events
+kubectl get events -n ${APIC_NAMESPACE} --sort-by='.lastTimestamp' | grep -i devportal | tail -20
+
+================================================================================
+DESTROY
+================================================================================
+
+# 1. Delete HTTPProxy
+kubectl delete httpproxy devportal-admin devportal-web -n ${APIC_NAMESPACE}
+
+# 2. Delete DevPortal CR
+kubectl delete devportalcluster devportal -n ${APIC_NAMESPACE}
+kubectl wait --for=delete devportalcluster devportal -n ${APIC_NAMESPACE} --timeout=600s
+
+# 3. Delete PVCs
+kubectl delete pvc -n ${APIC_NAMESPACE} -l app.kubernetes.io/instance=devportal
+
+# 4. Delete encryption secret
+kubectl delete secret devportal-enc-key -n ${APIC_NAMESPACE}
+
+# 5. Verify cleanup
+kubectl get all -n ${APIC_NAMESPACE} -l app.kubernetes.io/instance=devportal
+kubectl get pvc -n ${APIC_NAMESPACE} | grep devportal
+
+================================================================================
+KNOWN ISSUE: DevPortal Proxy Cannot Verify Management CA
+================================================================================
+
+SYMPTOM:
+DevPortal proxy logs show certificate verification errors when trying to reach Management:
+  kubectl logs -n ${APIC_NAMESPACE} -l app.kubernetes.io/name=proxy,app.kubernetes.io/instance=devportal --tail=50 | grep "unable to verify"
+
+  "Error: unable to verify the first certificate"
+  "Unexpected error while calling https://management-juhu.${APIC_NAMESPACE}.svc:2000/api/cloud/webhooks/..."
+
+ROOT CAUSE:
+Both Management and DevPortal use selfsigning-issuer, which creates separate self-signed CAs:
+  - Management subsystem gets: management-ca
+  - DevPortal subsystem gets: devportal-ca
+
+When DevPortal proxy (Node.js) makes HTTPS calls to Management service for webhook
+registration, it cannot verify Management's TLS certificate because it doesn't trust
+management-ca.
+
+SOLUTION:
+See detailed workarounds in:
+  ${PWD}/../../utilities/register-services/02-REGISTER-DEVPORTAL.txt → STEP 7
+
+Quick verification:
+  # Check if DevPortal proxy is having certificate issues
+  kubectl logs -n ${APIC_NAMESPACE} -l app.kubernetes.io/name=proxy,app.kubernetes.io/instance=devportal --tail=50
+
+  # Should NOT see "unable to verify the first certificate" if properly configured
+
+RECOMMENDED FIX:
+Use a shared CA issuer for all subsystems (see STEP 7 Option 1 in registration guide).
+This ensures all internal communications work without additional trust configuration.
+
+TEMPORARY WORKAROUND (DEV/TEST ONLY):
+If you need a quick temporary solution for development/testing, you can disable
+TLS verification at five points (see STEP 7 Option 4 for detailed commands):
+
+  1. DevPortal proxy → Management: NODE_TLS_REJECT_UNAUTHORIZED=0
+     kubectl patch deployment devportal-proxy -n ${APIC_NAMESPACE} --type=json \
+       -p='[{"op":"add","path":"/spec/template/spec/containers/1/env/-","value":{"name":"NODE_TLS_REJECT_UNAUTHORIZED","value":"0"}}]'
+
+  2. Management APIM → DevPortal: NODE_TLS_REJECT_UNAUTHORIZED=0
+     kubectl patch deployment management-apim -n ${APIC_NAMESPACE} --type=json \
+       -p='[{"op":"add","path":"/spec/template/spec/containers/0/env/-","value":{"name":"NODE_TLS_REJECT_UNAUTHORIZED","value":"0"}}]'
+
+  3. Management Portal Proxy → DevPortal (service registration): NODE_TLS_REJECT_UNAUTHORIZED=0
+     kubectl patch deployment management-portal-proxy -n ${APIC_NAMESPACE} --type=json \
+       -p='[{"op":"add","path":"/spec/template/spec/containers/0/env/-","value":{"name":"NODE_TLS_REJECT_UNAUTHORIZED","value":"0"}}]'
+
+  4. Management Juhu → DevPortal (webhook endpoints): NODE_TLS_REJECT_UNAUTHORIZED=0
+     kubectl patch deployment management-juhu -n ${APIC_NAMESPACE} --type=json \
+       -p='[{"op":"add","path":"/spec/template/spec/containers/0/env/-","value":{"name":"NODE_TLS_REJECT_UNAUTHORIZED","value":"0"}}]'
+
+  5. Ingress → DevPortal backend: Remove TLS validation
+     kubectl patch httpproxy devportal-web -n ${APIC_NAMESPACE} --type=json \
+       -p='[{"op":"remove","path":"/spec/routes/0/services/0/validation"}]'
+
+WARNING: This disables ALL certificate verification - NOT for production use!
+Patches may be lost if operators reconcile. Use shared CA issuer for production.
+
+================================================================================
+POST-DEPLOYMENT: REGISTER IN APIC CLOUD MANAGER
+================================================================================
+
+After deployment, register the wM Developer Portal in Cloud Manager:
+1. Login to https://${APIC_MGMT_ADMIN_HOST}/admin
+2. Navigate to: Topology → Infrastructure → Portal Services
+3. Click "Register Service"
+4. Fill in:
+   - Title: webMethods Developer Portal
+   - Service endpoint: https://${APIC_DEVPORTAL_ADMIN_HOST}
+   - TLS Client Profile: portal-api-admin-default
+     (This profile has keystore=portal-admin-client and truststore=ingress-ca)
+5. Save and verify status shows "Online"
+
+TROUBLESHOOTING REGISTRATION:
+  - Error "No required SSL certificate":
+    → Ingress must use TLS PASSTHROUGH (not TLS termination)
+    → Verify: kubectl get httpproxy devportal-admin -n ${APIC_NAMESPACE} -o jsonpath='{.spec.virtualhost.tls}'
+  - Error "TLS cert verify failed":
+    → Check profile truststore trusts ingress-ca
+    → Verify portal-api-admin-default truststore has ingress-ca cert
+  - Error "plain HTTP sent to HTTPS port":
+    → TLS profile's truststore does NOT trust the server cert
+    → OR TLS passthrough is not working — check HTTPProxy status
+
+================================================================================

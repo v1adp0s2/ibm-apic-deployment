@@ -1,0 +1,711 @@
+================================================================================
+REGISTER wM DEVELOPER PORTAL SERVICE — INTRA-CLUSTER GUIDE
+================================================================================
+Service:    DevPortalCluster (CR name: devportal)
+Endpoint:   https://devportal.${APIC_NAMESPACE}.svc  (ClusterIP :443)
+TLS:        Server cert signed by devportal-ca  |  mTLS: YES (client cert must be signed by devportal-ca)
+Profile:    wm-devportal-api-admin-default
+
+PUBLIC ENDPOINT REFERENCE (from config.env)
+  Admin API (service endpoint): https://${APIC_DEVPORTAL_ADMIN_HOST}
+                                 e.g. https://admin-devportal-apic.${APIC_DOMAIN_BASE}
+  Portal UI (consumer-facing):  https://${APIC_DEVPORTAL_UI_HOST}
+                                 e.g. https://devportal-apic.${APIC_DOMAIN_BASE}
+
+  NOTE: The SERVICE ENDPOINT registered in Cloud Manager must be the intra-cluster
+        admin API URL (https://devportal.${APIC_NAMESPACE}.svc) so management can
+        reach the portal admin API directly. The public UI URL is used when
+        associating a portal with a catalog (not during service registration).
+
+# Confirm public endpoints resolve and TLS is valid
+curl -sk "https://${APIC_DEVPORTAL_ADMIN_HOST}" -o /dev/null -w "%{http_code}\n"
+curl -sk "https://${APIC_DEVPORTAL_UI_HOST}" -o /dev/null -w "%{http_code}\n"
+
+PREREQUISITE: TOKEN must be set. See REGISTER-SERVICES.txt → API-BASED REGISTRATION.
+
+================================================================================
+STEP 1 — EXTRACT THE CA CERTIFICATE FROM THE CLUSTER
+================================================================================
+
+# The DevPortal server cert is signed by devportal-ca.
+# Management must trust devportal-ca to verify the portal TLS connection.
+
+kubectl get secret devportal-ca -n ${APIC_NAMESPACE} \
+  -o jsonpath='{.data.ca\.crt}' | base64 -d > devportal-ca.pem
+
+# Verify the certificate
+openssl x509 -in devportal-ca.pem -noout -subject -issuer -dates
+# Expected:
+#   subject=CN=devportal-ca
+#   issuer=CN=devportal-ca  (self-signed CA)
+
+================================================================================
+STEP 2 — VERIFY AND EXTRACT THE CLIENT CERTIFICATE (mTLS)
+================================================================================
+
+# DevPortal proxy (port 5443) validates client certs against devportal-ca.
+# The devportal-admin-client cert MUST be signed by devportal-ca — NOT ingress-ca.
+# APIC deploys it with ingress-issuer by default which is WRONG. Fix it first.
+
+# -- 2a. Check current issuer --------------------------------------------------
+kubectl get certificate devportal-admin-client -n ${APIC_NAMESPACE} \
+  -o custom-columns=NAME:.metadata.name,ISSUER:.spec.issuerRef.name
+
+# If ISSUER = ingress-issuer → fix it before continuing:
+
+kubectl patch certificate devportal-admin-client -n ${APIC_NAMESPACE} --type merge \
+  -p '{"spec":{"issuerRef":{"name":"devportal-ca","kind":"Issuer"}}}'
+
+kubectl delete secret devportal-admin-client -n ${APIC_NAMESPACE}
+
+kubectl wait --for=condition=Ready certificate/devportal-admin-client \
+  -n ${APIC_NAMESPACE} --timeout=60s
+
+# -- 2b. Extract cert and key --------------------------------------------------
+kubectl get secret devportal-admin-client -n ${APIC_NAMESPACE} \
+  -o go-template='{{index .data "tls.crt"}}' \
+  | python3 -c "import sys,base64; sys.stdout.buffer.write(base64.b64decode(sys.stdin.read()))" \
+  > wm-devportal-admin-client.crt
+
+kubectl get secret devportal-admin-client -n ${APIC_NAMESPACE} \
+  -o go-template='{{index .data "tls.key"}}' \
+  | python3 -c "import sys,base64; sys.stdout.buffer.write(base64.b64decode(sys.stdin.read()))" \
+  > wm-devportal-admin-client.key
+
+# -- 2c. Verify issuer BEFORE bundling ----------------------------------------
+openssl x509 -in wm-devportal-admin-client.crt -noout -subject -issuer
+# Expected:
+#   subject=O = cert-manager, CN = devportal-admin-client
+#   issuer=CN = devportal-ca   ← must be devportal-ca, NOT ingress-ca
+
+# -- 2d. Bundle as P12 for Cloud Manager keystore upload ----------------------
+openssl pkcs12 -export \
+  -in wm-devportal-admin-client.crt \
+  -inkey wm-devportal-admin-client.key \
+  -out wm-devportal-admin-client.p12 \
+  -name wm-devportal-admin-client \
+  -passout pass:changeme
+
+================================================================================
+STEP 3 — CONFIGURE CLOUD MANAGER: CREATE TRUSTSTORE
+================================================================================
+
+Cloud Manager URL: https://${APIC_MGMT_ADMIN_HOST}/admin
+
+Navigate to: Resources → TLS → Keystores and truststores tab
+
+  Create → Truststore
+  ┌─────────────────────────────────────────────────────────┐
+  │ Title:       wM DevPortal CA Truststore                 │
+  │ Description: Truststore for devportal-ca                │
+  │ Certificate: Upload devportal-ca.pem                    │
+  └─────────────────────────────────────────────────────────┘
+  Save → Status must show: Valid
+
+OR via API:
+curl -sk -X POST "https://${APIC_MGMT_PLATFORM_API_HOST}/api/orgs/admin/truststores" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"wm-devportal-ca-truststore","title":"wM DevPortal CA Truststore","summary":"devportal-ca"}' | jq .
+# Then upload devportal-ca.pem via UI (Resources → TLS → wM DevPortal CA Truststore → Upload certificate)
+
+================================================================================
+STEP 4 — CONFIGURE CLOUD MANAGER: CREATE KEYSTORE (mTLS CLIENT CERT)
+================================================================================
+
+Navigate to: Resources → TLS → Keystores and truststores tab
+
+  Create → Keystore
+  ┌─────────────────────────────────────────────────────────┐
+  │ Title:       wM Dev Portal Admin Client                 │
+  │ Description: Client cert for mTLS to DevPortal service  │
+  │ Upload:      wm-devportal-admin-client.p12               │
+  │ Password:    changeme  (or whatever you set above)      │
+  └─────────────────────────────────────────────────────────┘
+  Save → Status must show: Valid
+
+OR via API:
+# The keystore API requires the P12 file content (base64-encoded) and password in the same request
+KEYSTORE_B64=$(base64 -w0 wm-devportal-admin-client.p12)
+curl -sk -X POST "https://${APIC_MGMT_PLATFORM_API_HOST}/api/orgs/admin/keystores" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "$(jq -n \
+    --arg name    "wm-devportal-admin-client" \
+    --arg title   "wM Dev Portal Admin Client" \
+    --arg summary "Client cert for mTLS to DevPortal service" \
+    --arg ks      "$KEYSTORE_B64" \
+    --arg pass    "changeme" \
+    '{name:$name, title:$title, summary:$summary, keystore:$ks, password:$pass}')" | jq .
+
+  IMPORTANT: After saving the keystore, verify Status = Valid in Cloud Manager.
+  An Invalid status means the P12 was not uploaded or has a wrong password.
+  A missing/invalid keystore causes "400 The SSL certificate error" from DevPortal.
+
+================================================================================
+STEP 5 — CONFIGURE CLOUD MANAGER: TLS CLIENT PROFILE
+================================================================================
+
+Navigate to: Resources → TLS → TLS client profiles tab
+
+  Find or create: wm-devportal-api-admin-default
+  ┌─────────────────────────────────────────────────────────┐
+  │ Title:      wm-devportal-api-admin-default                    │
+  │ Keystore:   wM Dev Portal Admin Client    ← mTLS        │
+  │ Truststore: wM DevPortal CA Truststore    ← trust svc   │
+  └─────────────────────────────────────────────────────────┘
+  Save
+
+OR via API:
+# Resolve keystore and truststore URLs first, then create the profile
+KEYSTORE_URL=$(curl -sk "https://${APIC_MGMT_PLATFORM_API_HOST}/api/orgs/admin/keystores" \
+  -H "Authorization: Bearer $TOKEN" \
+  | jq -r '.results[] | select(.title=="wM Dev Portal Admin Client") | .url')
+
+TRUSTSTORE_URL=$(curl -sk "https://${APIC_MGMT_PLATFORM_API_HOST}/api/orgs/admin/truststores" \
+  -H "Authorization: Bearer $TOKEN" \
+  | jq -r '.results[] | select(.name=="wm-devportal-ca-truststore") | .url')
+
+curl -sk -X POST "https://${APIC_MGMT_PLATFORM_API_HOST}/api/orgs/admin/tls-client-profiles" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "$(jq -n \
+    --arg name  "wm-devportal-api-admin-default" \
+    --arg title "wm-devportal-api-admin-default" \
+    --arg ks    "$KEYSTORE_URL" \
+    --arg ts    "$TRUSTSTORE_URL" \
+    '{name:$name, title:$title, keystore_url:$ks, truststore_url:$ts}')" | jq .
+
+================================================================================
+STEP 6 — CONFIGURE MAIL SERVER (SMTP)
+================================================================================
+
+The Developer Portal sends emails for user registration, password reset, and
+subscription notifications. SMTP must be configured in Cloud Manager before
+registering the portal service.
+
+# Determine SMTP values — use maildev (dev/test) or your provided SMTP server:
+
+  OPTION 1: maildev (intra-cluster, dev/test)
+    SMTP_HOST=maildev.${APIC_NAMESPACE}.svc
+    SMTP_PORT=1025
+    SMTP_TLS=false
+    SMTP_AUTH=none
+    WEB_UI=http://maildev.${APIC_NAMESPACE}.svc:1080  ← view captured emails here
+
+    # Verify maildev is running
+    kubectl get pod -n ${APIC_NAMESPACE} -l app=maildev
+    kubectl get svc maildev maildev-smtp -n ${APIC_NAMESPACE}
+
+  OPTION 2: external / provided SMTP server
+    SMTP_HOST=<your-smtp-server>
+    SMTP_PORT=587  (STARTTLS) or 465 (SMTPS)
+    SMTP_TLS=true
+    SMTP_AUTH=username + password
+
+# Test SMTP reachability from inside the cluster (replace host/port accordingly)
+kubectl exec -n ${APIC_NAMESPACE} deployment/management-apim -- sh -c \
+  "echo 'QUIT' | timeout 5 bash -c 'cat >/dev/tcp/${SMTP_HOST}/${SMTP_PORT}' \
+   && echo 'SMTP reachable' || echo 'SMTP unreachable'"
+
+CONFIGURE VIA CLOUD MANAGER UI (RECOMMENDED):
+
+  Navigate to: Cloud Manager → Administration → Notifications
+
+  ┌──────────────────────────────────────────────────────────────────────┐
+  │ Email server                                                         │
+  │   Host:             <SMTP_HOST from above>                           │
+  │   Port:             <SMTP_PORT from above>                           │
+  │   Authentication:   None  (maildev) | Username+Password (external)  │
+  │   TLS:              None  (maildev) | STARTTLS or SSL/TLS (external) │
+  │   From email:       noreply@${APIC_DOMAIN_BASE}                      │
+  │   From name:        API Connect                                      │
+  └──────────────────────────────────────────────────────────────────────┘
+  Save → click "Send test email" to verify delivery
+
+CONFIGURE VIA PLATFORM API:
+
+  # Set these before running (adjust for maildev or external SMTP):
+  SMTP_HOST="maildev.${APIC_NAMESPACE}.svc"   # or your external SMTP host
+  SMTP_PORT=1025                               # or 587 / 465
+  SMTP_USER=""                                 # leave empty for maildev
+  SMTP_PASS=""                                 # leave empty for maildev
+  SMTP_SECURE=false                            # true for TLS/STARTTLS
+
+  curl -sk -X PUT "https://${APIC_MGMT_PLATFORM_API_HOST}/api/cloud/settings" \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "$(jq -n \
+      --arg host "$SMTP_HOST" \
+      --arg port "$SMTP_PORT" \
+      --arg user "$SMTP_USER" \
+      --arg pass "$SMTP_PASS" \
+      --argjson secure "$SMTP_SECURE" \
+      --arg from "noreply@${APIC_DOMAIN_BASE}" \
+      '{
+        mail_server_host: $host,
+        mail_server_port: ($port | tonumber),
+        mail_server_username: $user,
+        mail_server_password: $pass,
+        mail_server_secure: $secure,
+        email_sender: { name: "API Connect", address: $from }
+      }')" | jq '{mail_server_host, mail_server_port, mail_server_secure, email_sender}'
+
+  # Verify current SMTP settings
+  curl -sk "https://${APIC_MGMT_PLATFORM_API_HOST}/api/cloud/settings" \
+    -H "Authorization: Bearer $TOKEN" | jq '{mail_server_host, mail_server_port, mail_server_secure, email_sender}'
+
+================================================================================
+STEP 7 — CONFIGURE DEVPORTAL TO TRUST MANAGEMENT CA
+================================================================================
+
+ISSUE: DevPortal proxy (Node.js) makes HTTPS calls to Management service for
+webhook registration at https://management-juhu.${APIC_NAMESPACE}.svc:2000.
+However, Management's TLS certificate is signed by management-ca, which DevPortal
+does not trust by default (DevPortal uses devportal-ca for its own certificates).
+
+SYMPTOM: DevPortal proxy logs show:
+  "Error: unable to verify the first certificate"
+  "Unexpected error while calling https://management-juhu.${APIC_NAMESPACE}.svc:2000/api/cloud/webhooks/..."
+
+ROOT CAUSE: Both Management and DevPortal use the selfsigning-issuer (selfSigned: {})
+which creates separate self-signed CAs for each subsystem:
+  - Management gets: management-ca
+  - DevPortal gets: devportal-ca
+There is no cross-CA trust established between these subsystems.
+
+WORKAROUND OPTIONS:
+
+  Option 1: Configure a shared CA issuer (RECOMMENDED for production)
+  -----------------------------------------------------------------------
+  Instead of using selfSigned issuers, create a shared CA issuer that all
+  subsystems use. This requires redeploying Management and DevPortal with
+  the same CA issuer reference.
+
+  Steps:
+  1. Create a CA Certificate and Issuer:
+
+     cat <<EOF | kubectl apply -f -
+     apiVersion: cert-manager.io/v1
+     kind: Certificate
+     metadata:
+       name: apic-shared-ca
+       namespace: ${APIC_NAMESPACE}
+     spec:
+       isCA: true
+       commonName: apic-shared-ca
+       secretName: apic-shared-ca-secret
+       duration: 87600h  # 10 years
+       renewBefore: 8760h  # 1 year
+       issuerRef:
+         name: selfsigning-issuer
+         kind: Issuer
+     ---
+     apiVersion: cert-manager.io/v1
+     kind: Issuer
+     metadata:
+       name: apic-ca-issuer
+       namespace: ${APIC_NAMESPACE}
+     spec:
+       ca:
+         secretName: apic-shared-ca-secret
+     EOF
+
+  2. Update Management and DevPortal CRs to use apic-ca-issuer:
+
+     kubectl patch managementcluster management -n ${APIC_NAMESPACE} --type merge \
+       -p '{"spec":{"certManagerIssuer":{"name":"apic-ca-issuer","kind":"Issuer"}}}'
+
+     kubectl patch devportalcluster devportal -n ${APIC_NAMESPACE} --type merge \
+       -p '{"spec":{"certManagerIssuer":{"name":"apic-ca-issuer","kind":"Issuer"}}}'
+
+  3. Restart subsystems to regenerate certificates with shared CA
+
+  Option 2: Manual CA injection into DevPortal proxy container (TEMPORARY)
+  -------------------------------------------------------------------------
+  This is a temporary workaround that does not survive pod restarts. Use only
+  for testing or while preparing Option 1.
+
+  1. Extract management-ca certificate:
+
+     kubectl get secret management-ca -n ${APIC_NAMESPACE} \
+       -o jsonpath='{.data.ca\.crt}' | base64 -d > /tmp/management-ca.crt
+
+  2. Copy management-ca into DevPortal proxy container:
+
+     PROXY_POD=$(kubectl get pod -n ${APIC_NAMESPACE} \
+       -l app.kubernetes.io/name=proxy,app.kubernetes.io/instance=devportal \
+       -o jsonpath='{.items[0].metadata.name}')
+
+     kubectl cp /tmp/management-ca.crt \
+       ${APIC_NAMESPACE}/${PROXY_POD}:/tmp/management-ca.crt -c proxy
+
+  3. Exec into proxy container and add to Node.js trust store:
+
+     kubectl exec -n ${APIC_NAMESPACE} ${PROXY_POD} -c proxy -- sh -c \
+       "cat /tmp/management-ca.crt >> /etc/ssl/certs/ca-certificates.crt"
+
+  4. Restart proxy pod to pick up changes:
+
+     kubectl delete pod ${PROXY_POD} -n ${APIC_NAMESPACE}
+
+  Option 3: Configure NODE_EXTRA_CA_CERTS via DevPortal operator (UNTESTED)
+  --------------------------------------------------------------------------
+  If the DevPortal operator supports custom environment variables or volume
+  mounts for additional CAs, this would be the cleanest approach without
+  changing the issuer. However, this capability is not documented in v12.1.0.1.
+
+  Potential approach (requires operator support):
+  - Create ConfigMap with management-ca certificate
+  - Mount ConfigMap as volume in proxy container
+  - Set NODE_EXTRA_CA_CERTS environment variable to point to mounted CA file
+
+  This would require changes to the DevPortalCluster CR spec that may not
+  be available in the current operator version.
+
+  Option 4: Disable TLS verification (TEMPORARY - DEV/TEST ONLY)
+  ---------------------------------------------------------------
+  WARNING: This option disables ALL certificate verification and should ONLY
+  be used for development/testing environments. NOT for production.
+
+  This approach resolves all certificate trust issues by disabling TLS
+  verification at five points:
+  1. DevPortal proxy → Management (Node.js)
+  2. Management APIM → DevPortal (Node.js)
+  3. Management Portal Proxy → DevPortal (Node.js) - handles service registration
+  4. Management Juhu → DevPortal (Node.js) - handles webhook endpoints
+  5. Ingress proxy → DevPortal backend (Envoy)
+
+  Steps:
+
+  a) Disable TLS verification in DevPortal proxy:
+
+     kubectl patch deployment devportal-proxy -n ${APIC_NAMESPACE} --type=json -p='[
+       {
+         "op": "add",
+         "path": "/spec/template/spec/containers/1/env/-",
+         "value": {
+           "name": "NODE_TLS_REJECT_UNAUTHORIZED",
+           "value": "0"
+         }
+       }
+     ]'
+
+     kubectl rollout status deployment/devportal-proxy -n ${APIC_NAMESPACE}
+
+  b) Disable TLS verification in Management APIM:
+
+     kubectl patch deployment management-apim -n ${APIC_NAMESPACE} --type=json -p='[
+       {
+         "op": "add",
+         "path": "/spec/template/spec/containers/0/env/-",
+         "value": {
+           "name": "NODE_TLS_REJECT_UNAUTHORIZED",
+           "value": "0"
+         }
+       }
+     ]'
+
+     kubectl rollout status deployment/management-apim -n ${APIC_NAMESPACE}
+
+  c) Disable TLS verification in Management Portal Proxy (for service registration):
+
+     kubectl patch deployment management-portal-proxy -n ${APIC_NAMESPACE} --type=json -p='[
+       {
+         "op": "add",
+         "path": "/spec/template/spec/containers/0/env/-",
+         "value": {
+           "name": "NODE_TLS_REJECT_UNAUTHORIZED",
+           "value": "0"
+         }
+       }
+     ]'
+
+     kubectl rollout status deployment/management-portal-proxy -n ${APIC_NAMESPACE}
+
+  d) Disable TLS verification in Management Juhu (for webhook endpoints):
+
+     kubectl patch deployment management-juhu -n ${APIC_NAMESPACE} --type=json -p='[
+       {
+         "op": "add",
+         "path": "/spec/template/spec/containers/0/env/-",
+         "value": {
+           "name": "NODE_TLS_REJECT_UNAUTHORIZED",
+           "value": "0"
+         }
+       }
+     ]'
+
+     kubectl rollout status deployment/management-juhu -n ${APIC_NAMESPACE}
+
+  e) Disable backend TLS validation in Ingress HTTPProxy:
+
+     kubectl patch httpproxy devportal-web -n ${APIC_NAMESPACE} --type=json -p='[
+       {
+         "op": "remove",
+         "path": "/spec/routes/0/services/0/validation"
+       }
+     ]'
+
+  IMPORTANT WARNINGS:
+  - These patches may be lost if operators reconcile deployments
+  - Setting NODE_TLS_REJECT_UNAUTHORIZED=0 makes all TLS connections insecure
+  - No certificate validation = vulnerable to man-in-the-middle attacks
+  - Backend still uses TLS encryption but without certificate verification
+
+  Use Option 1 (Shared CA Issuer) for production deployments.
+
+VERIFICATION:
+
+After applying any workaround, verify DevPortal proxy can reach Management:
+
+  kubectl logs -n ${APIC_NAMESPACE} -l app.kubernetes.io/name=proxy,app.kubernetes.io/instance=devportal --tail=50
+
+  # Should NOT see "unable to verify the first certificate" errors
+  # Should see successful webhook registration messages
+
+================================================================================
+STEP 8 — REGISTER DEVELOPER PORTAL SERVICE IN CLOUD MANAGER
+================================================================================
+
+Navigate to: Topology → Infrastructure → Portal Services → Register Service
+
+  ┌─────────────────────────────────────────────────────────────────┐
+  │ Title:              webMethods Developer Portal                 │
+  │                                                                 │
+  │ Service endpoint:   https://devportal.${APIC_NAMESPACE}.svc     │
+  │                     ↑ intra-cluster admin API (required)        │
+  │                                                                 │
+  │ TLS Client Profile: wm-devportal-api-admin-default                    │
+  └─────────────────────────────────────────────────────────────────┘
+  Save → Status must show: Online
+
+  PUBLIC ENDPOINTS (reference — used when associating portal with a catalog):
+  ┌─────────────────────────────────────────────────────────────────┐
+  │ Portal website URL: https://${APIC_DEVPORTAL_UI_HOST}           │
+  │                     e.g. https://devportal-apic.${APIC_DOMAIN_BASE} │
+  └─────────────────────────────────────────────────────────────────┘
+
+================================================================================
+STEP 9 — VERIFY
+================================================================================
+
+# Check registration status via API
+curl -sk "https://${APIC_MGMT_PLATFORM_API_HOST}/api/orgs/admin/availability-zones/availability-zone-default/portal-services" \
+  -H "Authorization: Bearer $TOKEN" | jq '.results[] | {name, title, endpoint, state}'
+
+# Expected: "state": "ready"
+
+# Test TLS + mTLS connectivity from management pod
+kubectl exec -n ${APIC_NAMESPACE} deployment/management-apim -- sh -c \
+  "echo '' | openssl s_client -connect devportal.${APIC_NAMESPACE}.svc:443 \
+  -servername devportal.${APIC_NAMESPACE}.svc 2>&1 | grep -E '(subject=|issuer=|Verify return)'"
+# Expected:
+#   subject=CN=devportal-server
+#   issuer=CN=devportal-ca
+#   Verify return code: 0 (ok)
+
+================================================================================
+TROUBLESHOOTING
+================================================================================
+
+"unable to verify the first certificate"
+  → Two possible causes:
+    1. Management → DevPortal: devportal-ca not in Management truststore. Repeat STEP 3.
+    2. DevPortal → Management: DevPortal proxy cannot verify management-ca. See STEP 7.
+
+"400 The SSL certificate error"
+  → DevPortal proxy rejected the client cert. Root cause: devportal-admin-client
+    Certificate CR uses ingress-issuer but DevPortal proxy (port 5443) validates
+    client certs against devportal-ca. The cert MUST be signed by devportal-ca.
+
+    Fix — re-issue devportal-admin-client with correct issuer:
+
+    # 1. Patch Certificate CR to use devportal-ca issuer
+    kubectl patch certificate devportal-admin-client -n ${APIC_NAMESPACE} --type merge \
+      -p '{"spec":{"issuerRef":{"name":"devportal-ca","kind":"Issuer"}}}'
+
+    # 2. Delete secret to trigger cert-manager re-issuance
+    kubectl delete secret devportal-admin-client -n ${APIC_NAMESPACE}
+
+    # 3. Wait for new cert
+    kubectl wait --for=condition=Ready certificate/devportal-admin-client \
+      -n ${APIC_NAMESPACE} --timeout=60s
+
+    # 4. Verify new cert is signed by devportal-ca
+    kubectl get secret devportal-admin-client -n ${APIC_NAMESPACE} \
+      -o go-template='{{index .data "tls.crt"}}' \
+      | python3 -c "import sys,base64,subprocess; pem=base64.b64decode(sys.stdin.read()); \
+        r=subprocess.run(['openssl','x509','-noout','-subject','-issuer'],input=pem,capture_output=True); \
+        print(r.stdout.decode())"
+    # Expected:
+    #   subject=O = cert-manager, CN = devportal-admin-client
+    #   issuer=CN = devportal-ca   ← must be devportal-ca, NOT ingress-ca
+
+    After re-issuance, recreate the Cloud Manager keystore (STEP 4-B below).
+
+"400 No required SSL certificate"
+  → mTLS client cert not configured in profile. Repeat STEP 4 and STEP 5.
+
+"400 plain HTTP sent to HTTPS port"
+  → Truststore mismatch — wrong TLS profile selected. Use wm-devportal-api-admin-default.
+
+"503 TLS cert verify failed"
+  → Server cert not trusted by the profile's truststore.
+    Confirm devportal-ca.pem is the actual issuer:
+    openssl verify -CAfile devportal-ca.pem portal-server.crt
+
+"Hostname mismatch"
+  → Use exactly: https://devportal.${APIC_NAMESPACE}.svc
+    The cert SAN covers devportal.${APIC_NAMESPACE}.svc
+
+"status: offline after registration"
+  → Check DevPortal pods:
+    kubectl get pods -n ${APIC_NAMESPACE} -l app.kubernetes.io/name=devportal
+    kubectl logs -n ${APIC_NAMESPACE} -l app.kubernetes.io/name=devportal --tail=50
+
+"Authentication finally failed" in analytics-storage logs
+  → DevPortal cannot authenticate to analytics-storage backend using dev_portal_user.
+    Root cause: Password not synchronized from Kubernetes secret to OpenSearch internal users.
+
+    Symptom: Query OpenSearch internal users shows empty hash:
+
+    kubectl exec -n ${APIC_NAMESPACE} analytics-storage-0 -c storage -- \
+      curl -sk 'https://localhost:9202/_plugins/_security/api/internalusers/dev_portal_user' \
+      --cert /etc/velox/certs/admin/tls.crt \
+      --key /etc/velox/certs/admin/tls.key \
+      --cacert /etc/velox/certs/admin/ca.crt | jq -r '.dev_portal_user.hash'
+    # If output is empty ("") → password not hashed
+
+    Fix — manually hash password and update via Security API:
+
+    # 1. Retrieve password from secret
+    PASSWORD=$(kubectl get secret analytics-devportal-user -n ${APIC_NAMESPACE} \
+      -o jsonpath='{.data.password}' | base64 -d)
+
+    # 2. Generate bcrypt hash using OpenSearch hash.sh tool
+    HASH=$(kubectl exec -n ${APIC_NAMESPACE} analytics-storage-0 -c storage -- \
+      /usr/share/opensearch/plugins/opensearch-security/tools/hash.sh -p "$PASSWORD")
+
+    # 3. Update user with hashed password via Security API
+    kubectl exec -n ${APIC_NAMESPACE} analytics-storage-0 -c storage -- \
+      curl -sk -X PUT 'https://localhost:9202/_plugins/_security/api/internalusers/dev_portal_user' \
+      -H 'Content-Type: application/json' \
+      --cert /etc/velox/certs/admin/tls.crt \
+      --key /etc/velox/certs/admin/tls.key \
+      --cacert /etc/velox/certs/admin/ca.crt \
+      -d "{\"hash\":\"${HASH}\",\"backend_roles\":[\"portal_role\"]}"
+
+    # 4. Verify authentication works
+    kubectl exec -n ${APIC_NAMESPACE} analytics-storage-0 -c storage -- \
+      curl -sk -u "dev_portal_user:${PASSWORD}" 'https://localhost:9202/_cat/indices' 2>&1
+    # Expected: 403 Forbidden (authentication succeeded, permission denied is expected)
+    # If you see "Authentication finally failed" → hash still empty, repeat step 3
+
+    Note: This is a known issue where password synchronization from Kubernetes secrets
+    to OpenSearch internal users database doesn't happen automatically. The password
+    hash must be manually updated after analytics-storage initialization.
+
+================================================================================
+STEP 10 — RECREATE KEYSTORE AFTER CERT RE-ISSUANCE
+================================================================================
+
+Run this after fixing the devportal-admin-client cert (re-issued with devportal-ca issuer).
+
+# Extract new cert and key from cluster
+kubectl get secret devportal-admin-client -n ${APIC_NAMESPACE} \
+  -o go-template='{{index .data "tls.crt"}}' \
+  | python3 -c "import sys,base64; sys.stdout.buffer.write(base64.b64decode(sys.stdin.read()))" \
+  > wm-devportal-admin-client.crt
+
+kubectl get secret devportal-admin-client -n ${APIC_NAMESPACE} \
+  -o go-template='{{index .data "tls.key"}}' \
+  | python3 -c "import sys,base64; sys.stdout.buffer.write(base64.b64decode(sys.stdin.read()))" \
+  > wm-devportal-admin-client.key
+
+# Verify issuer before proceeding
+openssl x509 -in wm-devportal-admin-client.crt -noout -subject -issuer
+# Expected: issuer=CN = devportal-ca
+
+# Bundle as P12
+openssl pkcs12 -export \
+  -in wm-devportal-admin-client.crt \
+  -inkey wm-devportal-admin-client.key \
+  -out wm-devportal-admin-client.p12 \
+  -name wm-devportal-admin-client \
+  -passout pass:changeme
+
+# Delete existing keystore in Cloud Manager
+KEYSTORE_URL=$(curl -sk "https://${APIC_MGMT_PLATFORM_API_HOST}/api/orgs/admin/keystores" \
+  -H "Authorization: Bearer $TOKEN" \
+  | jq -r '.results[] | select(.name=="wm-devportal-admin-client") | .url')
+curl -sk -X DELETE "$KEYSTORE_URL" \
+  -H "Authorization: Bearer $TOKEN" -w "delete keystore: %{http_code}\n" -o /dev/null
+
+# Recreate keystore with new cert
+KEYSTORE_B64=$(base64 -w0 wm-devportal-admin-client.p12)
+curl -sk -X POST "https://${APIC_MGMT_PLATFORM_API_HOST}/api/orgs/admin/keystores" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "$(jq -n \
+    --arg name    "wm-devportal-admin-client" \
+    --arg title   "wM Dev Portal Admin Client" \
+    --arg summary "Client cert for mTLS to DevPortal service" \
+    --arg ks      "$KEYSTORE_B64" \
+    --arg pass    "changeme" \
+    '{name:$name, title:$title, summary:$summary, keystore:$ks, password:$pass}')" | jq '{title, url}'
+
+# Update TLS profile to point to new keystore
+NEW_KS_URL=$(curl -sk "https://${APIC_MGMT_PLATFORM_API_HOST}/api/orgs/admin/keystores" \
+  -H "Authorization: Bearer $TOKEN" \
+  | jq -r '.results[] | select(.name=="wm-devportal-admin-client") | .url')
+
+PROFILE_URL=$(curl -sk "https://${APIC_MGMT_PLATFORM_API_HOST}/api/orgs/admin/tls-client-profiles" \
+  -H "Authorization: Bearer $TOKEN" \
+  | jq -r '.results[] | select(.name=="wm-devportal-api-admin-default") | .url')
+
+curl -sk -X PATCH "$PROFILE_URL" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{\"keystore_url\":\"${NEW_KS_URL}\"}" | jq '{title, keystore_url}'
+
+================================================================================
+DEBUG — CERT CHAIN DIAGNOSTICS
+================================================================================
+
+# Verify devportal-admin-client is signed by devportal-ca (must be after re-issuance)
+kubectl get secret devportal-admin-client -n ${APIC_NAMESPACE} \
+  -o go-template='{{index .data "tls.crt"}}' \
+  | python3 -c "import sys,base64,subprocess; pem=base64.b64decode(sys.stdin.read()); \
+    r=subprocess.run(['openssl','x509','-noout','-subject','-issuer','-dates'],input=pem,capture_output=True); \
+    print(r.stdout.decode())"
+
+# Verify devportal-server cert (what proxy presents on port 5443)
+kubectl get secret devportal-server -n ${APIC_NAMESPACE} \
+  -o go-template='{{index .data "tls.crt"}}' \
+  | python3 -c "import sys,base64,subprocess; pem=base64.b64decode(sys.stdin.read()); \
+    r=subprocess.run(['openssl','x509','-noout','-subject','-issuer','-ext','subjectAltName'],input=pem,capture_output=True); \
+    print(r.stdout.decode())"
+
+# Confirm devportal proxy is using devportal-ca as internal client cert CA (port 5443)
+PROXY_POD=$(kubectl get pod -n ${APIC_NAMESPACE} \
+  -l app.kubernetes.io/name=proxy,app.kubernetes.io/component=devportal \
+  --no-headers -o name | head -1)
+kubectl exec $PROXY_POD -n ${APIC_NAMESPACE} -c ingw -- sh -c \
+  "grep -E 'ssl_client|ssl_verify|listen' /usr/local/openresty/nginx/conf/*/nginx.conf 2>/dev/null"
+
+# Check what cert-manager Certificate CR issuer is set to
+kubectl get certificate devportal-admin-client -n ${APIC_NAMESPACE} \
+  -o custom-columns=NAME:.metadata.name,ISSUER:.spec.issuerRef.name,SECRET:.spec.secretName
+
+# Verify keystore cert in Cloud Manager matches cluster secret
+curl -sk "https://${APIC_MGMT_PLATFORM_API_HOST}/api/orgs/admin/keystores" \
+  -H "Authorization: Bearer $TOKEN" \
+  | jq -r '.results[] | select(.name=="wm-devportal-admin-client") | .url' \
+  | xargs -I{} curl -sk {} -H "Authorization: Bearer $TOKEN" \
+  | python3 -c "import sys,json,subprocess; d=json.load(sys.stdin); \
+    pem=d.get('public_certificate_entry',{}).get('pem',''); \
+    r=subprocess.run(['openssl','x509','-noout','-subject','-issuer'],input=pem.encode(),capture_output=True); \
+    print('Keystore cert:', r.stdout.decode())"
+
+================================================================================

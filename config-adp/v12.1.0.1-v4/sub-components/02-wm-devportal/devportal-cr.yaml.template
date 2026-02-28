@@ -1,0 +1,41 @@
+apiVersion: devportal.apiconnect.ibm.com/v1beta1
+kind: DevPortalCluster
+metadata:
+  name: devportal
+  namespace: ${APIC_NAMESPACE}
+spec:
+  version: 12.1.0.1
+  profile: n1xc2.m4
+  imagePullSecrets:
+  - harbor-registry-secret
+  imageRegistry: ${APIC_IMAGE_REGISTRY}
+  devportalAdminEndpoint:
+    ingressClassName: ${APIC_INGRESS_CLASS}
+    annotations:
+      cert-manager.io/issuer: ingress-issuer
+    hosts:
+    - name: ${APIC_DEVPORTAL_ADMIN_HOST}
+      secretName: devportal-admin-endpoint
+  devportalUIEndpoint:
+    ingressClassName: ${APIC_INGRESS_CLASS}
+    annotations:
+      cert-manager.io/issuer: ingress-issuer
+    hosts:
+    - name: ${APIC_DEVPORTAL_UI_HOST}
+      secretName: devportal-ui-endpoint
+  analyticsRef:
+    name: analytics
+    namespace: ${APIC_NAMESPACE}
+  adminClientSubjectDN: CN=devportal-admin-client,O=cert-manager
+  microServiceSecurity: certManager
+  certManagerIssuer:
+    name: selfsigning-issuer
+    kind: Issuer
+  encryptionSecret:
+    secretName: devportal-enc-key
+  isStandalone: false
+  license:
+    accept: true
+    use: nonproduction
+    metric: PROCESSOR_VALUE_UNIT
+    license: L-PDZK-TWDH97

@@ -1,0 +1,458 @@
+================================================================================
+STORAGE TROUBLESHOOTING GUIDE - NFS & PVC ISSUES
+================================================================================
+Package: IBM API Connect v12.1.0.1-v3
+Storage: NFS-backed PersistentVolumeClaims
+Storage Class: nfs-ssd
+
+This guide covers common storage issues encountered during APIC deployment,
+particularly those related to NFS root_squash restrictions.
+
+================================================================================
+ISSUE #1: NFS ROOT_SQUASH PERMISSION ERRORS
+================================================================================
+
+SYMPTOM
+-------
+Pods fail to start with permission denied errors when trying to write to PVCs.
+
+Common error messages in pod logs:
+- "mkdir: cannot create directory '/path': Permission denied"
+- "chown: changing ownership of '/path': Operation not permitted"
+- "Error: EACCES: permission denied, open '/path/file'"
+- Pod status: CrashLoopBackOff or CreateContainerError
+
+Example from pod describe:
+  Warning  Failed     pod/management-xxx  Error: failed to create containerd task:
+           failed to create shim task: OCI runtime create failed:
+           runc create failed: unable to start container process:
+           exec: "/opt/ibm/bin/start.sh": permission denied
+
+
+ROOT CAUSE
+----------
+NFS servers are commonly configured with root_squash (or all_squash) for
+security. This causes:
+
+1. root_squash: Maps root user (UID 0) to anonymous user (typically nobody/65534)
+2. all_squash: Maps ALL users to anonymous user
+
+When containers run as root (UID 0) and try to write to NFS volumes, the NFS
+server squashes root to nobody, causing permission denied errors.
+
+NFS Export Configuration Examples:
+  /nfs/exports *(rw,sync,no_subtree_check,root_squash)     # Maps root to nobody
+  /nfs/exports *(rw,sync,no_subtree_check,all_squash)      # Maps ALL to nobody
+  /nfs/exports *(rw,sync,no_subtree_check,no_root_squash)  # Allows root (INSECURE!)
+
+
+AFFECTED COMPONENTS
+-------------------
+Components that may run as root and encounter this issue:
+- Management subsystem (PostgreSQL, Cassandra init containers)
+- Analytics subsystem (ClickHouse, Coordinating)
+- Developer Portal (PostgreSQL, NGINX)
+- Gateway subsystems (DataPower, webMethods)
+- MailDev utility
+- Any component with init containers that run as root
+
+
+VERIFICATION
+------------
+
+1. Check NFS server export configuration:
+   # On NFS server
+   cat /etc/exports
+
+   # Look for root_squash or all_squash options
+   /nfs/exports *(rw,sync,no_subtree_check,root_squash)
+
+2. Check PVC mount and permissions:
+   kubectl get pvc -n ${APIC_NAMESPACE}
+   kubectl describe pvc <pvc-name> -n ${APIC_NAMESPACE}
+
+3. Check pod events:
+   kubectl describe pod <pod-name> -n ${APIC_NAMESPACE}
+   kubectl logs <pod-name> -n ${APIC_NAMESPACE}
+
+4. Test write permissions from a debug pod:
+   kubectl run -it --rm debug --image=busybox --restart=Never \
+     --overrides='
+   {
+     "spec": {
+       "containers": [{
+         "name": "debug",
+         "image": "busybox",
+         "command": ["sh"],
+         "volumeMounts": [{
+           "name": "test-vol",
+           "mountPath": "/mnt"
+         }]
+       }],
+       "volumes": [{
+         "name": "test-vol",
+         "persistentVolumeClaim": {
+           "claimName": "your-pvc-name"
+         }
+       }]
+     }
+   }' -n ${APIC_NAMESPACE}
+
+   # Once in the pod:
+   id                           # Check current user
+   touch /mnt/testfile          # Try to create file
+   ls -la /mnt/                 # Check ownership
+
+
+SOLUTION #1: CONFIGURE NFS NO_ROOT_SQUASH (RECOMMENDED FOR DEV/TEST)
+---------------------------------------------------------------------
+
+For development and test environments, disable root_squash on NFS server.
+
+⚠️  WARNING: This allows containers running as root to write as root on NFS.
+Only use in trusted, non-production environments!
+
+Steps:
+
+1. Edit NFS exports on NFS server:
+   sudo vi /etc/exports
+
+   # Change from:
+   /nfs/exports *(rw,sync,no_subtree_check,root_squash)
+
+   # To:
+   /nfs/exports *(rw,sync,no_subtree_check,no_root_squash)
+
+2. Re-export NFS shares:
+   sudo exportfs -ra
+
+3. Verify export options:
+   sudo exportfs -v
+
+   # Expected output should show no_root_squash:
+   /nfs/exports    <world>(rw,sync,wdelay,hide,no_subtree_check,
+                    sec=sys,rw,secure,no_root_squash,no_all_squash)
+
+4. Delete and recreate affected PVCs (CAUTION: DATA LOSS):
+   kubectl delete pvc <pvc-name> -n ${APIC_NAMESPACE}
+   # Redeploy component to recreate PVC
+
+5. Restart affected pods:
+   kubectl delete pod <pod-name> -n ${APIC_NAMESPACE}
+   # Or restart deployment:
+   kubectl rollout restart deployment/<deployment-name> -n ${APIC_NAMESPACE}
+
+
+SOLUTION #2: USE SUPPLEMENTAL GROUPS (PREFERRED FOR PRODUCTION)
+----------------------------------------------------------------
+
+Configure pods to use specific GID that has NFS permissions.
+
+1. On NFS server, create group and set permissions:
+   sudo groupadd -g 5000 nfsgroup
+   sudo chown -R :5000 /nfs/exports
+   sudo chmod -R 775 /nfs/exports
+
+2. Configure NFS exports with anonuid/anongid:
+   /nfs/exports *(rw,sync,no_subtree_check,all_squash,anonuid=65534,anongid=5000)
+
+3. Update Kubernetes StorageClass to set fsGroup:
+   apiVersion: storage.k8s.io/v1
+   kind: StorageClass
+   metadata:
+     name: nfs-ssd
+   provisioner: nfs.csi.k8s.io
+   parameters:
+     server: nfs-server.example.com
+     share: /nfs/exports
+   mountOptions:
+     - nfsvers=4.1
+     - nolock
+   volumeBindingMode: Immediate
+   allowVolumeExpansion: true
+   # Note: fsGroup must be set at pod level, not StorageClass
+
+4. Add fsGroup to pod securityContext (requires patching deployments):
+   spec:
+     securityContext:
+       fsGroup: 5000
+       runAsNonRoot: true
+       runAsUser: 1000
+
+
+SOLUTION #3: USE INIT CONTAINERS TO FIX PERMISSIONS
+---------------------------------------------------
+
+Add init container to fix ownership before main container starts.
+
+Example init container (requires no_root_squash or proper NFS permissions):
+
+  initContainers:
+  - name: fix-permissions
+    image: busybox
+    command: ['sh', '-c']
+    args:
+    - |
+      chown -R 1000:1000 /data
+      chmod -R 755 /data
+    volumeMounts:
+    - name: data-volume
+      mountPath: /data
+    securityContext:
+      runAsUser: 0  # Run as root to chown
+
+Note: This still requires NFS to allow the chown operation!
+
+
+SOLUTION #4: PRE-CREATE DIRECTORIES WITH CORRECT OWNERSHIP
+-----------------------------------------------------------
+
+Manually create directories on NFS with correct ownership before deployment.
+
+1. On NFS server or client with NFS mount:
+   cd /nfs/exports
+
+   # Create directories for each PVC with proper ownership
+   mkdir -p management-db-data
+   chown -R 1000:1000 management-db-data
+   chmod -R 755 management-db-data
+
+   mkdir -p analytics-data
+   chown -R 1000:1000 analytics-data
+   chmod -R 755 analytics-data
+
+2. Deploy APIC components - they should use pre-created directories
+
+
+SOLUTION #5: USE DIFFERENT STORAGE BACKEND
+-------------------------------------------
+
+If NFS root_squash cannot be disabled, consider alternative storage:
+
+- Local Path Provisioner (for single-node dev clusters)
+- Rook-Ceph (distributed block/file storage)
+- OpenEBS (container-native storage)
+- Cloud provider storage (EBS, Azure Disk, GCE PD)
+- NFS with proper permission model (Solutions #2-4)
+
+
+================================================================================
+ISSUE #2: PVC BOUND BUT POD CANNOT WRITE
+================================================================================
+
+SYMPTOM
+-------
+- PVC shows status: Bound
+- Pod starts but cannot write to volume
+- Permission denied errors in pod logs
+
+DIAGNOSIS
+---------
+1. Check PVC and PV:
+   kubectl get pvc -n ${APIC_NAMESPACE}
+   kubectl get pv
+   kubectl describe pvc <pvc-name> -n ${APIC_NAMESPACE}
+
+2. Check volume mount inside pod:
+   kubectl exec -it <pod-name> -n ${APIC_NAMESPACE} -- ls -la /mount/path
+   kubectl exec -it <pod-name> -n ${APIC_NAMESPACE} -- id
+
+3. Check NFS mount on worker node:
+   # SSH to worker node running the pod
+   mount | grep nfs
+   ls -la /var/lib/kubelet/pods/*/volumes/kubernetes.io~nfs/
+
+SOLUTION
+--------
+See SOLUTION #1-5 above for NFS root_squash fixes.
+
+
+================================================================================
+ISSUE #3: PVC STUCK IN PENDING STATE
+================================================================================
+
+SYMPTOM
+-------
+- PVC remains in Pending state indefinitely
+- Pod cannot start (ContainerCreating)
+
+DIAGNOSIS
+---------
+1. Check PVC events:
+   kubectl describe pvc <pvc-name> -n ${APIC_NAMESPACE}
+
+   Common errors:
+   - "waiting for a volume to be created"
+   - "no persistent volumes available"
+   - "storageclass not found"
+
+2. Check StorageClass:
+   kubectl get sc
+   kubectl describe sc nfs-ssd
+
+3. Check provisioner logs:
+   kubectl logs -n kube-system -l app=nfs-subdir-external-provisioner
+
+SOLUTION
+--------
+1. Verify StorageClass exists and is configured:
+   kubectl get sc nfs-ssd -o yaml
+
+2. Verify NFS CSI driver or provisioner is running:
+   kubectl get pods -n kube-system | grep nfs
+
+3. Check NFS server is accessible from nodes:
+   # On worker node:
+   showmount -e <nfs-server-ip>
+   mount -t nfs <nfs-server>:/path /mnt/test
+
+4. Verify provisioner has permissions on NFS export
+
+
+================================================================================
+ISSUE #4: POSTGRESQL INIT CONTAINER FAILURES
+================================================================================
+
+SYMPTOM
+-------
+PostgreSQL pods (Management, Portal, Analytics) fail during init with:
+
+  initdb: error: could not change permissions of directory "/var/lib/postgresql/data/pgdata":
+  Operation not permitted
+
+ROOT CAUSE
+----------
+PostgreSQL initdb tries to chmod the data directory to 700, which fails when:
+- NFS has root_squash enabled
+- Directory ownership doesn't match postgres user (UID 999 or 26)
+
+SOLUTION
+--------
+See SOLUTION #1 (disable root_squash) or SOLUTION #2 (use fsGroup)
+
+
+================================================================================
+ISSUE #5: STORAGE QUOTA EXCEEDED
+================================================================================
+
+SYMPTOM
+-------
+- Pods evicted or failing with "disk pressure"
+- Errors: "No space left on device"
+
+DIAGNOSIS
+---------
+1. Check PVC usage:
+   kubectl exec -it <pod-name> -n ${APIC_NAMESPACE} -- df -h
+
+2. Check NFS server disk space:
+   # On NFS server:
+   df -h /nfs/exports
+
+SOLUTION
+--------
+1. Expand PVC (if StorageClass allows):
+   kubectl edit pvc <pvc-name> -n ${APIC_NAMESPACE}
+   # Increase spec.resources.requests.storage
+
+2. Clean up old data:
+   kubectl exec -it <pod-name> -n ${APIC_NAMESPACE} -- \
+     du -sh /mount/path/*
+   # Delete unnecessary files
+
+3. Increase NFS server storage allocation
+
+
+================================================================================
+VERIFICATION AFTER FIXES
+================================================================================
+
+After applying any fix, verify:
+
+1. PVC is bound:
+   kubectl get pvc -n ${APIC_NAMESPACE}
+   # All should show STATUS: Bound
+
+2. Pods are running:
+   kubectl get pods -n ${APIC_NAMESPACE}
+   # All should show STATUS: Running
+
+3. No permission errors in logs:
+   kubectl logs -n ${APIC_NAMESPACE} <pod-name>
+
+4. Components are healthy:
+   kubectl get managementcluster -n ${APIC_NAMESPACE}
+   kubectl get analyticscluster -n ${APIC_NAMESPACE}
+   kubectl get devportalcluster -n ${APIC_NAMESPACE}
+
+
+================================================================================
+BEST PRACTICES FOR NFS STORAGE WITH APIC
+================================================================================
+
+1. DEVELOPMENT/TEST ENVIRONMENTS:
+   - Use no_root_squash for simplicity
+   - Ensure adequate IOPS (SSD-backed recommended)
+   - Monitor disk space usage
+
+2. PRODUCTION ENVIRONMENTS:
+   - Do NOT use no_root_squash (security risk)
+   - Use SOLUTION #2 (supplemental groups with anonuid/anongid)
+   - Consider enterprise NFS or cloud-native storage
+   - Enable NFS v4.1 or higher
+   - Use dedicated NFS exports per environment
+   - Implement backup strategy for NFS data
+
+3. NFS EXPORT RECOMMENDED OPTIONS:
+   /nfs/exports *(rw,sync,no_subtree_check,no_root_squash,no_all_squash)  # Dev/Test
+   /nfs/exports *(rw,sync,no_subtree_check,all_squash,anonuid=65534,anongid=5000)  # Prod
+
+4. STORAGE CLASS CONFIGURATION:
+   - Set allowVolumeExpansion: true
+   - Use appropriate mount options (nfsvers=4.1, nolock)
+   - Test provisioner functionality before deployment
+
+5. MONITORING:
+   - Monitor NFS server performance
+   - Set up alerts for disk space
+   - Monitor PVC usage trends
+   - Check for permission errors in pod logs
+
+
+================================================================================
+REFERENCE: COMMON NFS EXPORT OPTIONS
+================================================================================
+
+rw                 Read-write access
+ro                 Read-only access
+sync               Synchronous writes (safer but slower)
+async              Asynchronous writes (faster but riskier)
+no_subtree_check   Disable subtree checking (recommended for stability)
+root_squash        Map root to anonymous user (DEFAULT, more secure)
+no_root_squash     Allow root user (less secure, needed for some apps)
+all_squash         Map all users to anonymous user
+no_all_squash      Preserve user IDs (DEFAULT)
+anonuid=UID        Set UID for anonymous user
+anongid=GID        Set GID for anonymous user
+secure             Require requests from privileged ports
+insecure           Allow requests from any port
+
+
+================================================================================
+RELATED ISSUES AND LINKS
+================================================================================
+
+Common error patterns to search for:
+- "mkdir: cannot create directory: Permission denied" + NFS
+- "chown: changing ownership: Operation not permitted" + Kubernetes
+- "initdb: error: could not change permissions" + PostgreSQL
+- "EACCES: permission denied" + NFS + Kubernetes
+
+NFS Troubleshooting Resources:
+- Kubernetes NFS documentation
+- NFS v4 ACL documentation
+- Storage provider documentation (Synology, TrueNAS, etc.)
+- CSI driver documentation (nfs.csi.k8s.io, nfs-subdir-external-provisioner)
+
+
+================================================================================

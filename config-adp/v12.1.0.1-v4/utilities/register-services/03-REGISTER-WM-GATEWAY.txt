@@ -1,0 +1,324 @@
+================================================================================
+REGISTER wM API GATEWAY SERVICE — INTRA-CLUSTER GUIDE
+================================================================================
+Service:    WMAPIGatewayCluster (CR name: wmapigw)
+Endpoint:   https://wmapigw.${APIC_NAMESPACE}.svc  (ClusterIP :443)
+TLS:        Server cert signed by ingress-ca  |  mTLS: YES (client cert required)
+Profile:    wm-gateway-mgmt-client-default
+Gateway type in Cloud Manager: webMethods API Gateway
+
+PUBLIC ENDPOINT REFERENCE (from config.env)
+  API endpoint (consumer-facing): https://${APIC_WM_GATEWAY_HOST}
+                                   e.g. https://wmapigw-apic.${APIC_DOMAIN_BASE}
+  Gateway UI / admin:             https://${APIC_WM_GATEWAY_UI_HOST}
+                                   e.g. https://wmapigw-ui-apic.${APIC_DOMAIN_BASE}
+
+  NOTE: For the API endpoint base, you may use either:
+    - INTRA-CLUSTER: https://wmapigw.${APIC_NAMESPACE}.svc  (management-plane only)
+    - PUBLIC:        https://${APIC_WM_GATEWAY_HOST}         (if APIs must be reachable
+                                                              externally by consumers)
+  The management endpoint must always be the intra-cluster URL.
+
+# Confirm public endpoint resolves and TLS is valid
+curl -sk "https://${APIC_WM_GATEWAY_HOST}" -o /dev/null -w "%{http_code}\n"
+
+PREREQUISITE: TOKEN must be set. See REGISTER-SERVICES.txt → API-BASED REGISTRATION.
+
+NOTE: Both the API endpoint base AND the management endpoint use the same
+      intra-cluster service URL for wM Gateway.
+
+================================================================================
+STEP 1 — EXTRACT THE CA CERTIFICATE FROM THE CLUSTER
+================================================================================
+
+# The wM Gateway server cert is signed by ingress-ca.
+# Management must trust ingress-ca to verify the gateway TLS connection.
+
+kubectl get secret ingress-ca -n ${APIC_NAMESPACE} \
+  -o jsonpath='{.data.ca\.crt}' | base64 -d > ingress-ca.pem
+
+# Verify the certificate
+openssl x509 -in ingress-ca.pem -noout -subject -issuer -dates
+# Expected:
+#   subject=CN=ingress-ca
+#   issuer=CN=ingress-ca  (self-signed CA)
+
+# [SKIP if Ingress CA Truststore already created during Analytics registration]
+
+================================================================================
+STEP 2 — CREATE A DEDICATED CLIENT CERTIFICATE (mTLS)
+================================================================================
+
+# wM Gateway proxy (port 4443, combine_certs.sh) validates client certs against:
+#   combined-ca = external-server/ca.crt = ingress-ca  (hardcoded, cannot add management-ca)
+#   CLIENT_SUBJECT_DN = CN=management-client            (WMAPIGatewayCluster.spec.mgmtClientSubjectDN)
+#
+# The "management-client" secret is signed by management-ca and is used by ALL
+# management plane pods for internal Velox service mesh — DO NOT modify it.
+#
+# Solution: create a DEDICATED cert with CN=management-client signed by ingress-ca.
+# This cert is only used for Cloud Manager → wM Gateway registration.
+
+# -- 2a. Create dedicated Certificate CR --------------------------------------
+kubectl apply -f - <<EOF
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: wm-gateway-mgmt-client
+  namespace: ${APIC_NAMESPACE}
+spec:
+  commonName: management-client
+  duration: 17520h
+  renewBefore: 720h
+  issuerRef:
+    name: ingress-issuer
+    kind: Issuer
+  privateKey:
+    rotationPolicy: Always
+  secretName: wm-gateway-mgmt-client
+  usages:
+    - client auth
+    - signing
+    - key encipherment
+EOF
+
+kubectl wait --for=condition=Ready certificate/wm-gateway-mgmt-client \
+  -n ${APIC_NAMESPACE} --timeout=60s
+
+# -- 2b. Extract cert and key --------------------------------------------------
+kubectl get secret wm-gateway-mgmt-client -n ${APIC_NAMESPACE} \
+  -o go-template='{{index .data "tls.crt"}}' \
+  | python3 -c "import sys,base64; sys.stdout.buffer.write(base64.b64decode(sys.stdin.read()))" \
+  > wm-gateway-mgmt-client.crt
+
+kubectl get secret wm-gateway-mgmt-client -n ${APIC_NAMESPACE} \
+  -o go-template='{{index .data "tls.key"}}' \
+  | python3 -c "import sys,base64; sys.stdout.buffer.write(base64.b64decode(sys.stdin.read()))" \
+  > wm-gateway-mgmt-client.key
+
+# -- 2c. Verify subject and issuer BEFORE bundling ----------------------------
+openssl x509 -in wm-gateway-mgmt-client.crt -noout -subject -issuer
+# Expected:
+#   subject=CN=management-client   ← must match CLIENT_SUBJECT_DN
+#   issuer=CN=ingress-ca           ← must match combined-ca in proxy
+
+# -- 2d. Bundle as P12 for Cloud Manager keystore upload ----------------------
+openssl pkcs12 -export \
+  -in wm-gateway-mgmt-client.crt \
+  -inkey wm-gateway-mgmt-client.key \
+  -out wm-gateway-mgmt-client.p12 \
+  -name wm-gateway-mgmt-client \
+  -passout pass:changeme
+
+================================================================================
+STEP 3 — CONFIGURE CLOUD MANAGER: TRUSTSTORE
+================================================================================
+
+Cloud Manager URL: https://${APIC_MGMT_ADMIN_HOST}/admin
+
+# Check if an ingress-ca truststore already exists (created during Analytics registration)
+curl -sk "https://${APIC_MGMT_PLATFORM_API_HOST}/api/orgs/admin/truststores" \
+  -H "Authorization: Bearer $TOKEN" \
+  | jq -r '.results[] | select(.title | test("Ingress CA|ingress-ca|Analytics Ingestion"; "i")) | "\(.title)  \(.url)"'
+# If a match is returned → SKIP the Create step below and note the title for STEP 5.
+# If no match → create it:
+
+Navigate to: Resources → TLS → Keystores and truststores tab
+
+  Create → Truststore
+  ┌─────────────────────────────────────────────────────────┐
+  │ Title:       Ingress CA Truststore                      │
+  │ Description: Truststore for ingress-ca (Analytics,      │
+  │              Gateways)                                  │
+  │ Certificate: Upload ingress-ca.pem                      │
+  └─────────────────────────────────────────────────────────┘
+  Save → Status must show: Valid
+
+================================================================================
+STEP 4 — CONFIGURE CLOUD MANAGER: CREATE KEYSTORE (mTLS CLIENT CERT)
+================================================================================
+
+Navigate to: Resources → TLS → Keystores and truststores tab
+
+  Create → Keystore
+  ┌─────────────────────────────────────────────────────────┐
+  │ Title:       wM Gateway Mgmt Client                     │
+  │ Description: Client cert for mTLS to wM Gateway         │
+  │ Upload:      wm-gateway-mgmt-client.p12                 │
+  │ Password:    changeme  (or whatever you set above)      │
+  └─────────────────────────────────────────────────────────┘
+  Save → Status must show: Valid
+  IMPORTANT: After saving the keystore, verify Status = Valid.
+             If Status = Invalid, the P12 cert issuer is wrong — go back to STEP 2.
+
+OR via API:
+KEYSTORE_B64=$(base64 -w0 wm-gateway-mgmt-client.p12)
+curl -sk -X POST "https://${APIC_MGMT_PLATFORM_API_HOST}/api/orgs/admin/keystores" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "$(jq -n \
+    --arg name  "wm-gateway-mgmt-client" \
+    --arg title "wM Gateway Mgmt Client" \
+    --arg summary "Client cert for mTLS to wM Gateway (CN=management-client, signed by ingress-ca)" \
+    --arg ks    "$KEYSTORE_B64" \
+    --arg pass  "changeme" \
+    '{name:$name, title:$title, summary:$summary, keystore:$ks, password:$pass}')" | jq .
+
+================================================================================
+STEP 5 — CONFIGURE CLOUD MANAGER: TLS CLIENT PROFILE
+================================================================================
+
+Navigate to: Resources → TLS → TLS client profiles tab
+
+  Find or create: wm-gateway-mgmt-client-default
+  ┌─────────────────────────────────────────────────────────┐
+  │ Title:      wm-gateway-mgmt-client-default            │
+  │ Keystore:   wM Gateway Mgmt Client        ← mTLS        │
+  │ Truststore: Ingress CA Truststore         ← trust svc   │
+  └─────────────────────────────────────────────────────────┘
+  Save
+
+OR via API:
+# Resolve keystore and truststore URLs first, then create the profile
+KEYSTORE_URL=$(curl -sk "https://${APIC_MGMT_PLATFORM_API_HOST}/api/orgs/admin/keystores" \
+  -H "Authorization: Bearer $TOKEN" \
+  | jq -r '.results[] | select(.title=="wM Gateway Mgmt Client") | .url')
+
+TRUSTSTORE_URL=$(curl -sk "https://${APIC_MGMT_PLATFORM_API_HOST}/api/orgs/admin/truststores" \
+  -H "Authorization: Bearer $TOKEN" \
+  | jq -r '.results[] | select(.title | test("Ingress CA|ingress-ca|Analytics Ingestion"; "i")) | .url' \
+  | head -1)
+
+curl -sk -X POST "https://${APIC_MGMT_PLATFORM_API_HOST}/api/orgs/admin/tls-client-profiles" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "$(jq -n \
+    --arg name  "wm-gateway-mgmt-client-default" \
+    --arg title "wm-gateway-mgmt-client-default" \
+    --arg ks    "$KEYSTORE_URL" \
+    --arg ts    "$TRUSTSTORE_URL" \
+    '{name:$name, title:$title, keystore_url:$ks, truststore_url:$ts}')" | jq .
+
+================================================================================
+STEP 6 — REGISTER wM API GATEWAY IN CLOUD MANAGER
+================================================================================
+
+Navigate to: Topology → Infrastructure → Gateway Services → Register Service
+
+  ┌──────────────────────────────────────────────────────────────────────┐
+  │ Title:               webMethods API Gateway                          │
+  │ Gateway type:        webMethods API Gateway                          │
+  │                                                                      │
+  │ API endpoint base:   https://${APIC_WM_GATEWAY_HOST}                 │
+  │                      e.g. https://wmapigw-apic.${APIC_DOMAIN_BASE}   │
+  │                      ↑ public URL consumers invoke APIs through      │
+  │                                                                      │
+  │ Management endpoint: https://wmapigw.${APIC_NAMESPACE}.svc           │
+  │                      ↑ intra-cluster (management plane only)         │
+  │                                                                      │
+  │ TLS Client Profile:  wm-gateway-mgmt-client-default                │
+  └──────────────────────────────────────────────────────────────────────┘
+  Save → Status must show: Online
+
+================================================================================
+STEP 7 — VERIFY
+================================================================================
+
+# Check registration status via API
+curl -sk "https://${APIC_MGMT_PLATFORM_API_HOST}/api/orgs/admin/availability-zones/availability-zone-default/gateway-services" \
+  -H "Authorization: Bearer $TOKEN" | jq '.results[] | {name, title, endpoint, gateway_service_type, state}'
+
+# Expected: "state": "ready"
+
+# Test TLS connectivity from management pod
+kubectl exec -n ${APIC_NAMESPACE} deployment/management-apim -- sh -c \
+  "echo '' | openssl s_client -connect wmapigw.${APIC_NAMESPACE}.svc:443 \
+  -servername wmapigw.${APIC_NAMESPACE}.svc 2>&1 | grep -E '(subject=|issuer=|Verify return)'"
+# Expected:
+#   issuer=CN=ingress-ca
+#   Verify return code: 0 (ok)
+
+# Check wM Gateway pods are healthy
+kubectl get pods -n ${APIC_NAMESPACE} -l app.kubernetes.io/name=wmapigw
+kubectl logs -n ${APIC_NAMESPACE} -l app.kubernetes.io/name=wmapigw --tail=30
+
+================================================================================
+TROUBLESHOOTING
+================================================================================
+
+"503 / connection refused"
+  → Confirm wmapigw ClusterIP service is available:
+    kubectl get svc wmapigw -n ${APIC_NAMESPACE}
+    kubectl get pods -n ${APIC_NAMESPACE} | grep wmapigw
+
+"TLS cert verify failed"
+  → Wrong truststore. Confirm Ingress CA Truststore contains the correct ingress-ca.pem.
+    kubectl get secret ingress-ca -n ${APIC_NAMESPACE} -o jsonpath='{.data.ca\.crt}' | base64 -d | openssl x509 -noout -fingerprint
+
+"401 / unauthorized" or "403 Certificate subject ineligible"
+  → mTLS client cert subject rejected by wM Gateway LUA script.
+    Gateway validates: ssl_client_s_dn == CLIENT_SUBJECT_DN (= CN=management-client)
+    Confirm the dedicated cert has correct subject:
+      openssl x509 -in wm-gateway-mgmt-client.crt -noout -subject
+      # Must be: subject=CN=management-client
+
+"400 The SSL certificate error" during gateway registration
+  ROOT CAUSE: wM Gateway proxy (combine_certs.sh) builds combined-ca from
+              external-server/ca.crt = ingress-ca only. Client cert must be
+              signed by ingress-ca to pass ssl_verify_client.
+              DO NOT modify "management-client" secret — it is used by all
+              management plane pods for internal Velox mTLS (signed by management-ca).
+  FIX: ensure the dedicated "wm-gateway-mgmt-client" Certificate CR exists
+       with issuerRef=ingress-issuer (STEP 2a). Re-run STEP 2 if missing.
+
+  DELETE old keystore (if keystore Status = Invalid after P12 re-upload):
+    KEYSTORE_URL=$(curl -sk "https://${APIC_MGMT_PLATFORM_API_HOST}/api/orgs/admin/keystores" \
+      -H "Authorization: Bearer $TOKEN" \
+      | jq -r '.results[] | select(.name=="wm-gateway-mgmt-client") | .url')
+    curl -sk -X DELETE "$KEYSTORE_URL" -H "Authorization: Bearer $TOKEN" -w "%{http_code}\n" -o /dev/null
+    # Recreate keystore (STEP 4 API block), then PATCH TLS profile:
+    NEW_KS_URL=$(curl -sk "https://${APIC_MGMT_PLATFORM_API_HOST}/api/orgs/admin/keystores" \
+      -H "Authorization: Bearer $TOKEN" \
+      | jq -r '.results[] | select(.name=="wm-gateway-mgmt-client") | .url')
+    PROFILE_URL=$(curl -sk "https://${APIC_MGMT_PLATFORM_API_HOST}/api/orgs/admin/tls-client-profiles" \
+      -H "Authorization: Bearer $TOKEN" \
+      | jq -r '.results[] | select(.name=="wm-gateway-mgmt-client-default") | .url')
+    curl -sk -X PATCH "$PROFILE_URL" -H "Authorization: Bearer $TOKEN" \
+      -H "Content-Type: application/json" \
+      -d "{\"keystore_url\":\"${NEW_KS_URL}\"}" | jq .
+
+"status: offline after registration"
+  → Check OpenSearch (internal DB) is running:
+    kubectl get pods -n ${APIC_NAMESPACE} | grep wmapigw-opensearch
+
+================================================================================
+DEBUG — DIAGNOSTIC COMMANDS
+================================================================================
+
+# Verify dedicated cert issuer from cluster secret
+kubectl get secret wm-gateway-mgmt-client -n ${APIC_NAMESPACE} \
+  -o go-template='{{index .data "tls.crt"}}' \
+  | python3 -c "import sys,base64; sys.stdout.buffer.write(base64.b64decode(sys.stdin.read()))" \
+  | openssl x509 -noout -subject -issuer
+# Expected: subject=CN=management-client  issuer=CN=ingress-ca
+
+# Confirm Certificate CR issuer
+kubectl get certificate wm-gateway-mgmt-client -n ${APIC_NAMESPACE} \
+  -o custom-columns=NAME:.metadata.name,ISSUER:.spec.issuerRef.name,STATUS:.status.conditions[-1].reason
+
+# Confirm wM Gateway proxy validates against ingress-ca on port 4443
+kubectl exec -n ${APIC_NAMESPACE} wmapigw-proxy-<pod-id> -c ingw -- sh -c \
+  "cat /certs/combined-ca/ca.crt" | openssl x509 -noout -subject -issuer
+# Expected: subject=CN=ingress-ca  (port 4443 = management endpoint uses this CA for client validation)
+
+# Check CLIENT_SUBJECT_DN env var in gateway proxy
+kubectl exec -n ${APIC_NAMESPACE} wmapigw-proxy-<pod-id> -c ingw -- sh -c "echo \$CLIENT_SUBJECT_DN"
+# Expected: CN=management-client
+
+# Check keystore cert in Cloud Manager matches cluster secret
+KEYSTORE_URL=$(curl -sk "https://${APIC_MGMT_PLATFORM_API_HOST}/api/orgs/admin/keystores" \
+  -H "Authorization: Bearer $TOKEN" \
+  | jq -r '.results[] | select(.name=="wm-gateway-mgmt-client") | .url')
+curl -sk "$KEYSTORE_URL" -H "Authorization: Bearer $TOKEN" | jq '{name, title, status}'
+
+================================================================================

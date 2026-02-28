@@ -1,0 +1,217 @@
+================================================================================
+REGISTER AI DATAPOWER GATEWAY SERVICE — INTRA-CLUSTER GUIDE
+================================================================================
+Service:    GatewayCluster (CR name: gwv6)
+Endpoint:   https://gwv6.${APIC_NAMESPACE}.svc  (ClusterIP :443 → targetPort 3000)
+TLS:        Server cert signed by ingress-ca  |  mTLS: NO (mtlsValidateClient: false)
+Profile:    wm-ai-gateway-mgmt-default
+Gateway type in Cloud Manager: DataPower API Gateway
+
+PUBLIC ENDPOINT REFERENCE (from config.env)
+  API endpoint (consumer-facing):   https://${APIC_AI_GATEWAY_HOST}
+                                     e.g. https://rgw-apic.${APIC_DOMAIN_BASE}
+  Gateway manager (management UI):  https://${APIC_AI_GATEWAY_MANAGER_HOST}
+                                     e.g. https://rgwd-apic.${APIC_DOMAIN_BASE}
+
+  NOTE: mTLS is disabled — no keystore (client cert) is needed for this gateway.
+        Only a truststore (to verify the DataPower server cert) is required.
+
+  NOTE: The management endpoint cert (gwv6-manager-endpoint) covers both the
+        public manager URL and the intra-cluster URL (gwv6.${APIC_NAMESPACE}.svc).
+        Prefer intra-cluster for management to keep traffic internal.
+
+# Confirm public endpoints resolve and TLS is valid
+curl -sk "https://${APIC_AI_GATEWAY_HOST}" -o /dev/null -w "API GW: %{http_code}\n"
+curl -sk "https://${APIC_AI_GATEWAY_MANAGER_HOST}" -o /dev/null -w "GW Manager: %{http_code}\n"
+
+PREREQUISITE: TOKEN must be set. See REGISTER-SERVICES.txt → API-BASED REGISTRATION.
+
+================================================================================
+STEP 1 — EXTRACT THE CA CERTIFICATE FROM THE CLUSTER
+================================================================================
+
+# The DataPower management endpoint cert (gwv6-manager-endpoint) is signed by ingress-ca.
+# Management must trust ingress-ca to verify the gateway TLS connection.
+
+kubectl get secret ingress-ca -n ${APIC_NAMESPACE} \
+  -o jsonpath='{.data.ca\.crt}' | base64 -d > ingress-ca.pem
+
+# Verify the certificate
+openssl x509 -in ingress-ca.pem -noout -subject -issuer -dates
+# Expected:
+#   subject=CN=ingress-ca
+#   issuer=CN=ingress-ca  (self-signed CA)
+
+# Verify management endpoint cert SANs cover intra-cluster URL
+kubectl get secret gwv6-manager-endpoint -n ${APIC_NAMESPACE} \
+  -o go-template='{{index .data "tls.crt"}}' \
+  | python3 -c "import sys,base64,subprocess; cert=base64.b64decode(sys.stdin.read()); \
+    p=subprocess.run(['openssl','x509','-noout','-issuer','-ext','subjectAltName'],input=cert,capture_output=True); \
+    print(p.stdout.decode().strip())"
+# Expected:
+#   issuer=CN=ingress-ca
+#   SAN: DNS:rgwd-apic.<domain>, DNS:gwv6.${APIC_NAMESPACE}.svc, DNS:gwv6.${APIC_NAMESPACE}.svc.cluster.local
+
+# [SKIP if Ingress CA Truststore already created during Analytics/wM Gateway registration]
+
+================================================================================
+STEP 2 — CONFIGURE CLOUD MANAGER: TRUSTSTORE
+================================================================================
+
+Cloud Manager URL: https://${APIC_MGMT_ADMIN_HOST}/admin
+
+# Check if an ingress-ca truststore already exists (created during earlier registrations)
+curl -sk "https://${APIC_MGMT_PLATFORM_API_HOST}/api/orgs/admin/truststores" \
+  -H "Authorization: Bearer $TOKEN" \
+  | jq -r '.results[] | select(.title | test("Ingress CA|ingress-ca|Analytics Ingestion"; "i")) | "\(.title)  \(.url)"'
+# If a match is returned → SKIP the Create step below and note the title for STEP 3.
+# If no match → create it:
+
+Navigate to: Resources → TLS → Keystores and truststores tab
+
+  Create → Truststore
+  ┌─────────────────────────────────────────────────────────┐
+  │ Title:       Ingress CA Truststore                      │
+  │ Description: Truststore for ingress-ca (Analytics,      │
+  │              Gateways)                                  │
+  │ Certificate: Upload ingress-ca.pem                      │
+  └─────────────────────────────────────────────────────────┘
+  Save → Status must show: Valid
+
+================================================================================
+STEP 3 — CONFIGURE CLOUD MANAGER: TLS CLIENT PROFILE
+================================================================================
+
+Navigate to: Resources → TLS → TLS client profiles tab
+
+  Find or create: wm-ai-gateway-mgmt-default
+  ┌─────────────────────────────────────────────────────────┐
+  │ Title:      wm-ai-gateway-mgmt-default                  │
+  │ Keystore:   (none — mTLS disabled)                      │
+  │ Truststore: Ingress CA Truststore    ← verify svc cert  │
+  └─────────────────────────────────────────────────────────┘
+  Save
+
+OR via API:
+TRUSTSTORE_URL=$(curl -sk "https://${APIC_MGMT_PLATFORM_API_HOST}/api/orgs/admin/truststores" \
+  -H "Authorization: Bearer $TOKEN" \
+  | jq -r '.results[] | select(.title | test("Ingress CA|ingress-ca|Analytics Ingestion"; "i")) | .url' \
+  | head -1)
+
+curl -sk -X POST "https://${APIC_MGMT_PLATFORM_API_HOST}/api/orgs/admin/tls-client-profiles" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "$(jq -n \
+    --arg name  "wm-ai-gateway-mgmt-default" \
+    --arg title "wm-ai-gateway-mgmt-default" \
+    --arg ts    "$TRUSTSTORE_URL" \
+    '{name:$name, title:$title, truststore_url:$ts}')" | jq .
+
+================================================================================
+STEP 4 — REGISTER AI DATAPOWER GATEWAY IN CLOUD MANAGER
+================================================================================
+
+Navigate to: Topology → Infrastructure → Gateway Services → Register Service
+
+  ┌──────────────────────────────────────────────────────────────────────┐
+  │ Title:               AI DataPower Gateway                            │
+  │ Gateway type:        DataPower API Gateway                           │
+  │                                                                      │
+  │ API endpoint base:   https://${APIC_AI_GATEWAY_HOST}                 │
+  │                      e.g. https://rgw-apic.${APIC_DOMAIN_BASE}       │
+  │                      ↑ public URL consumers invoke APIs through      │
+  │                                                                      │
+  │ Management endpoint: https://gwv6.${APIC_NAMESPACE}.svc              │
+  │                      ↑ intra-cluster (preferred, cert SAN covers it) │
+  │                                                                      │
+  │   [PUBLIC ALTERNATIVE — if intra-cluster not reachable from mgmt]   │
+  │   Management endpoint: https://${APIC_AI_GATEWAY_MANAGER_HOST}       │
+  │                        e.g. https://rgwd-apic.${APIC_DOMAIN_BASE}    │
+  │                                                                      │
+  │ TLS Client Profile:  wm-ai-gateway-mgmt-default                      │
+  └──────────────────────────────────────────────────────────────────────┘
+  Save → Status must show: Online
+
+================================================================================
+STEP 5 — VERIFY
+================================================================================
+
+# Check registration status via API
+curl -sk "https://${APIC_MGMT_PLATFORM_API_HOST}/api/orgs/admin/availability-zones/availability-zone-default/gateway-services" \
+  -H "Authorization: Bearer $TOKEN" | jq '.results[] | {name, title, endpoint, gateway_service_type, state}'
+
+# Expected: "state": "ready", "gateway_service_type": "datapower-api-gateway"
+
+# Test TLS connectivity from management pod
+kubectl exec -n ${APIC_NAMESPACE} deployment/management-apim -- sh -c \
+  "echo '' | openssl s_client -connect gwv6.${APIC_NAMESPACE}.svc:443 \
+  -servername gwv6.${APIC_NAMESPACE}.svc 2>&1 | grep -E '(subject=|issuer=|Verify return)'"
+# Expected:
+#   issuer=CN=ingress-ca
+#   Verify return code: 0 (ok)
+
+# Check DataPower pod health
+kubectl get pods -n ${APIC_NAMESPACE} -l app.kubernetes.io/name=gwv6
+kubectl get GatewayCluster gwv6 -n ${APIC_NAMESPACE} -o custom-columns=NAME:.metadata.name,STATUS:.status.phase,READY:.status.conditions[1].message
+
+================================================================================
+TROUBLESHOOTING
+================================================================================
+
+"TLS certificate signed by unknown authority"
+  → Ingress CA Truststore missing or wrong cert. Repeat STEP 2.
+    Confirm the management endpoint cert issuer:
+    kubectl get secret gwv6-manager-endpoint -n ${APIC_NAMESPACE} \
+      -o go-template='{{index .data "tls.crt"}}' \
+      | python3 -c "import sys,base64,subprocess; cert=base64.b64decode(sys.stdin.read()); \
+        p=subprocess.run(['openssl','x509','-noout','-issuer'],input=cert,capture_output=True); \
+        print(p.stdout.decode().strip())"
+    # Must be: issuer=CN=ingress-ca
+
+"connection refused / 503"
+  → gwv6 ClusterIP service not reachable:
+    kubectl get svc gwv6 -n ${APIC_NAMESPACE}
+    kubectl get pods -n ${APIC_NAMESPACE} | grep gwv6
+
+"DataPower cannot connect back to management"
+  → DataPower uses management-ca (GatewayCluster.spec.mgmtPlatformEndpointCASecret)
+    to verify the management platform endpoint. This is correct and should not change.
+    Confirm the secret is valid:
+    kubectl get secret management-ca -n ${APIC_NAMESPACE} \
+      -o jsonpath='{.data.ca\.crt}' | base64 -d | openssl x509 -noout -subject -dates
+
+"Token Management Service errors"
+  → Check TMS PVC is bound:
+    kubectl get pvc -n ${APIC_NAMESPACE} | grep gwv6
+  → Check DataPower logs:
+    kubectl logs -n ${APIC_NAMESPACE} -l app.kubernetes.io/name=gwv6 | grep -i tms
+
+"status: offline after registration"
+  → DataPower may still be initializing. Check:
+    kubectl describe GatewayCluster gwv6 -n ${APIC_NAMESPACE} | grep -A5 "Conditions"
+    kubectl logs -n ${APIC_NAMESPACE} -l app.kubernetes.io/name=gwv6 --tail=30
+
+================================================================================
+DEBUG — DIAGNOSTIC COMMANDS
+================================================================================
+
+# Confirm management endpoint cert covers intra-cluster URL
+kubectl get secret gwv6-manager-endpoint -n ${APIC_NAMESPACE} \
+  -o go-template='{{index .data "tls.crt"}}' \
+  | python3 -c "import sys,base64,subprocess; cert=base64.b64decode(sys.stdin.read()); \
+    p=subprocess.run(['openssl','x509','-noout','-issuer','-ext','subjectAltName'],input=cert,capture_output=True); \
+    print(p.stdout.decode().strip())"
+# Expected: SAN includes gwv6.${APIC_NAMESPACE}.svc
+
+# Confirm GatewayCluster mTLS setting
+kubectl get GatewayCluster gwv6 -n ${APIC_NAMESPACE} \
+  -o jsonpath='{.spec.mtlsValidateClient}'
+# Expected: false
+
+# Confirm TLS profile has correct truststore
+PROFILE_URL=$(curl -sk "https://${APIC_MGMT_PLATFORM_API_HOST}/api/orgs/admin/tls-client-profiles" \
+  -H "Authorization: Bearer $TOKEN" \
+  | jq -r '.results[] | select(.name=="wm-ai-gateway-mgmt-default") | .url')
+curl -sk "$PROFILE_URL" -H "Authorization: Bearer $TOKEN" | jq '{name, title, truststore_url}'
+
+================================================================================

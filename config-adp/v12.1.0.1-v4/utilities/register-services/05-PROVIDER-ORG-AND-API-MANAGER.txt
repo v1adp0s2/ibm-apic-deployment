@@ -1,0 +1,393 @@
+================================================================================
+PROVIDER ORGANIZATION & API MANAGER SETUP GUIDE
+================================================================================
+Scope:  Cloud Manager → create Provider Org + owner
+        API Manager  → create Catalog, associate Gateway, Portal, Analytics
+URL:    Cloud Manager: https://${APIC_MGMT_ADMIN_HOST}/admin
+        API Manager:   https://${APIC_MGMT_MANAGER_HOST}/manager
+
+PREREQUISITE: source config.env before running any commands.
+PREREQUISITE: TOKEN must be set (admin token). See REGISTER-SERVICES.txt.
+PREREQUISITE: Gateway, Analytics, Portal services must be registered first
+              (see 01..04 guides).
+
+================================================================================
+STEP 1 — CREATE PROVIDER ORG OWNER (LOCAL USER)
+================================================================================
+
+# Create the owner user in the API Manager Local User Registry (default-idp-2).
+# Provider org owners MUST belong to a registry configured for provider scope.
+# Do NOT use the Cloud Manager Local User Registry (default-idp-1) — it will
+# produce: "user must belong to a user registry configured in provider settings"
+
+# -- 1a. Get the API Manager local user registry URL ---------------------------
+LUR_URL=$(curl -sk "https://${APIC_MGMT_PLATFORM_API_HOST}/api/orgs/admin/user-registries" \
+  -H "Authorization: Bearer $TOKEN" \
+  | jq -r '.results[] | select(.registry_type=="lur" and (.title | test("API Manager"; "i"))) | .url' \
+  | head -1)
+echo "LUR URL: $LUR_URL"
+
+# -- 1b. Create the owner user -------------------------------------------------
+# NOTE: Use a temp file to avoid jq 1.7 escaping '!' in passwords.
+cat > /tmp/create_porg_owner.json << EOF
+{
+  "username": "${PORG_OWNER_USERNAME}",
+  "password": "${PORG_OWNER_PASSWORD}",
+  "email":    "${PORG_OWNER_EMAIL}",
+  "first_name": "ADP",
+  "last_name":  "Admin"
+}
+EOF
+curl -sk -X POST "${LUR_URL}/users" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d @/tmp/create_porg_owner.json | jq '{username, url}'
+
+# -- 1c. Capture the owner URL for org creation --------------------------------
+# NOTE: LUR_URL must be the API Manager LUR from Step 1a (source config.env first).
+OWNER_URL=$(curl -sk "${LUR_URL}/users" \
+  -H "Authorization: Bearer $TOKEN" \
+  | jq -r --arg u "${PORG_OWNER_USERNAME}" '.results[] | select(.username==$u) | .url')
+echo "Owner URL: $OWNER_URL"
+
+OR via Cloud Manager UI:
+  Navigate to: Resources → User Registries → API Manager Local User Registry → Users → Create
+  ┌─────────────────────────────────────────────────────────┐
+  │ Username:    ${PORG_OWNER_USERNAME}                      │
+  │ Password:    ${PORG_OWNER_PASSWORD}                      │
+  │ Email:       ${PORG_OWNER_EMAIL}                         │
+  │ First name:  ADP                                        │
+  │ Last name:   Admin                                      │
+  └─────────────────────────────────────────────────────────┘
+  Then capture OWNER_URL via Step 1c API call above.
+
+================================================================================
+STEP 2 — CREATE PROVIDER ORGANIZATION
+================================================================================
+
+# -- 2a. Create the Provider Org -----------------------------------------------
+cat > /tmp/create_porg.json << EOF
+{
+  "name":      "${PORG_NAME}",
+  "title":     "${PORG_TITLE}",
+  "org_type":  "provider",
+  "owner_url": "${OWNER_URL}"
+}
+EOF
+curl -sk -X POST "https://${APIC_MGMT_PLATFORM_API_HOST}/api/cloud/orgs" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d @/tmp/create_porg.json | jq '{name, title, url, state}'
+
+# -- 2b. Verify ----------------------------------------------------------------
+curl -sk "https://${APIC_MGMT_PLATFORM_API_HOST}/api/cloud/orgs" \
+  -H "Authorization: Bearer $TOKEN" \
+  | jq '.results[] | select(.org_type=="provider") | {name, title, state}'
+
+OR via Cloud Manager UI:
+  Navigate to: Manage Organizations → Add → Create Organization
+  ┌─────────────────────────────────────────────────────────┐
+  │ Name:    ${PORG_NAME}                                    │
+  │ Title:   ${PORG_TITLE}                                   │
+  │ Owner:   ${PORG_OWNER_USERNAME}  (select from registry)  │
+  └─────────────────────────────────────────────────────────┘
+
+================================================================================
+STEP 3 — GET API MANAGER TOKEN (Provider Org scope)
+================================================================================
+
+# API Manager operations (catalogs, gateway config) require a pOrg-scoped token.
+# CLIENT_ID and CLIENT_SECRET are inherited from REGISTER-SERVICES.txt.
+# If not set, re-export them:
+#   CLIENT_ID=$(kubectl get secret management-cli-cred -n ${APIC_NAMESPACE} \
+#     -o jsonpath='{.data.credential\.json}' | base64 -d | jq -r '.id')
+#   CLIENT_SECRET=$(kubectl get secret management-cli-cred -n ${APIC_NAMESPACE} \
+#     -o jsonpath='{.data.credential\.json}' | base64 -d | jq -r '.secret')
+
+# NOTE: Use a temp file to avoid jq 1.7 escaping '!' in passwords.
+cat > /tmp/porg_token_req.json << EOF
+{
+  "grant_type":    "password",
+  "username":      "${PORG_OWNER_USERNAME}",
+  "password":      "${PORG_OWNER_PASSWORD}",
+  "realm":         "provider/default-idp-2",
+  "client_id":     "${CLIENT_ID}",
+  "client_secret": "${CLIENT_SECRET}"
+}
+EOF
+PORG_TOKEN=$(curl -sk -X POST "https://${APIC_MGMT_PLATFORM_API_HOST}/api/token" \
+  -H "Content-Type: application/json" \
+  -d @/tmp/porg_token_req.json | jq -r '.access_token')
+echo "pOrg Token: ${PORG_TOKEN:0:50}..."
+
+================================================================================
+STEP 4 — CREATE CATALOG
+================================================================================
+
+# A Catalog is the deployment target for APIs and Products.
+# Typically create at minimum a "sandbox" catalog for development.
+
+# -- 4a. Create Sandbox catalog ------------------------------------------------
+curl -sk -X POST "https://${APIC_MGMT_PLATFORM_API_HOST}/api/orgs/${PORG_NAME}/catalogs" \
+  -H "Authorization: Bearer $PORG_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"sandbox","title":"Sandbox"}' | jq '{name, title, url}'
+
+# -- 4b. Create Production catalog (optional) ----------------------------------
+curl -sk -X POST "https://${APIC_MGMT_PLATFORM_API_HOST}/api/orgs/${PORG_NAME}/catalogs" \
+  -H "Authorization: Bearer $PORG_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"poc","title":"ADP POC"}' | jq '{name, title, url}'
+
+# -- 4c. List catalogs ---------------------------------------------------------
+curl -sk "https://${APIC_MGMT_PLATFORM_API_HOST}/api/orgs/${PORG_NAME}/catalogs" \
+  -H "Authorization: Bearer $PORG_TOKEN" \
+  | jq '.results[] | {name, title, url}'
+
+OR via API Manager UI:
+  Navigate to: API Manager → Manage → Catalogs → Create
+  ┌─────────────────────────────────────────────────────────┐
+  │ Name:   sandbox                                         │
+  │ Title:  Sandbox                                         │
+  └─────────────────────────────────────────────────────────┘
+
+================================================================================
+STEP 5 — ASSOCIATE GATEWAY SERVICE TO CATALOG
+================================================================================
+
+# Each catalog must have at least one gateway service configured.
+# This determines which gateway publishes APIs from this catalog.
+#
+# IMPORTANT — APIC v12 URL conventions (differ from v10 docs):
+#   Catalog URL:         /api/catalogs/{org-uuid}/{catalog-uuid}   (from list response)
+#   Gateway service URL: /api/orgs/{org-uuid}/gateway-services/{gw-uuid}
+#   Both are resolved using PORG_TOKEN.
+
+CATALOG_NAME="${CATALOG_NAME:-poc}"
+
+# Resolve catalog URL from the list (UUID-based, required for sub-resource calls)
+CATALOG_URL=$(curl -sk "https://${APIC_MGMT_PLATFORM_API_HOST}/api/orgs/${PORG_NAME}/catalogs" \
+  -H "Authorization: Bearer $PORG_TOKEN" \
+  | jq -r --arg c "${CATALOG_NAME}" '.results[] | select(.name==$c) | .url')
+echo "Catalog URL: $CATALOG_URL"
+
+# -- 5a. Get gateway service URLs (pOrg scope, PORG_TOKEN) ---------------------
+# Gateway services are visible at /api/orgs/{porg}/gateway-services (no availability-zones)
+AI_GW_URL=$(curl -sk "https://${APIC_MGMT_PLATFORM_API_HOST}/api/orgs/${PORG_NAME}/gateway-services" \
+  -H "Authorization: Bearer $PORG_TOKEN" \
+  | jq -r '.results[] | select(.gateway_service_type=="datapower-api-gateway") | .url' | head -1)
+
+WM_GW_URL=$(curl -sk "https://${APIC_MGMT_PLATFORM_API_HOST}/api/orgs/${PORG_NAME}/gateway-services" \
+  -H "Authorization: Bearer $PORG_TOKEN" \
+  | jq -r '.results[] | select(.gateway_service_type=="wm-api-gateway") | .url' | head -1)
+
+echo "AI GW:  $AI_GW_URL"
+echo "wM GW:  $WM_GW_URL"
+
+# -- 5b. Associate gateway to catalog ------------------------------------------
+curl -sk -X POST "${CATALOG_URL}/configured-gateway-services" \
+  -H "Authorization: Bearer $PORG_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{\"gateway_service_url\":\"${AI_GW_URL}\"}" | jq '{name, gateway_service_url}'
+
+# Associate wM Gateway to same catalog (if needed):
+curl -sk -X POST "${CATALOG_URL}/configured-gateway-services" \
+  -H "Authorization: Bearer $PORG_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{\"gateway_service_url\":\"${WM_GW_URL}\"}" | jq '{name, gateway_service_url}'
+
+# -- 5c. Verify ----------------------------------------------------------------
+curl -sk "${CATALOG_URL}/configured-gateway-services" \
+  -H "Authorization: Bearer $PORG_TOKEN" \
+  | jq '.results[] | {name, gateway_service_url}'
+
+OR via API Manager UI:
+  Navigate to: Manage → Catalogs → ${CATALOG_NAME} → Settings → API Gateways
+  Click "Add" → select gateway → Save
+
+================================================================================
+STEP 6 — VERIFY ANALYTICS (INHERITED FROM GATEWAY)
+================================================================================
+
+# In APIC v12, analytics is configured at the gateway service level in Cloud Manager
+# (guides 03/04). Catalogs inherit analytics automatically through their gateway
+# association — there is no catalog-level analytics API endpoint.
+
+# Verify analytics is configured on the gateway service (admin TOKEN required):
+curl -sk "https://${APIC_MGMT_PLATFORM_API_HOST}/api/orgs/admin/availability-zones/availability-zone-default/gateway-services" \
+  -H "Authorization: Bearer $TOKEN" \
+  | jq '.results[] | {name, analytics_service_url}'
+
+# If analytics_service_url is set on the gateway → catalogs using it inherit analytics.
+# If not → associate analytics to the gateway service in Cloud Manager UI:
+#   Topology → Gateway Services → <gateway> → Edit → Analytics Service → Save
+
+================================================================================
+STEP 7 — ASSOCIATE DEVELOPER PORTAL TO CATALOG (OPTIONAL)
+================================================================================
+
+# Associating a portal creates a Developer Portal site for the catalog.
+# PREREQUISITE: SMTP must be configured in Cloud Manager before this step —
+#   DevPortal sends an activation email on site creation.
+#   See STEP 6 (SMTP) in 02-REGISTER-DEVPORTAL.txt.
+#   Intra-cluster maildev: host=maildev.${APIC_NAMESPACE}.svc  port=1025
+#
+# CATALOG_URL must be set from STEP 5 (UUID-based URL from list response).
+#
+# APIC v12: portal association uses POST to configured-portal-services sub-resource,
+# NOT PATCH on the catalog object (which rejects 'portal' as an unknown property).
+
+PORTAL_SVC_URL=$(curl -sk "https://${APIC_MGMT_PLATFORM_API_HOST}/api/orgs/${PORG_NAME}/portal-services" \
+  -H "Authorization: Bearer $PORG_TOKEN" \
+  | jq -r '.results[0].url')
+echo "Portal service URL: $PORTAL_SVC_URL"
+
+# Portal website URL — use the configured DevPortal UI hostname (${APIC_DEVPORTAL_UI_HOST})
+# Must be unique per catalog. Use a distinct subdomain for each catalog.
+PORTAL_SITE_URL="https://${APIC_DEVPORTAL_UI_HOST}"
+
+curl -sk -X POST "${CATALOG_URL}/configured-portal-services" \
+  -H "Authorization: Bearer $PORG_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{\"portal_service_url\":\"${PORTAL_SVC_URL}\",\"endpoint\":\"${PORTAL_SITE_URL}\"}" \
+  | jq .
+
+# Verify
+curl -sk "${CATALOG_URL}/configured-portal-services" \
+  -H "Authorization: Bearer $PORG_TOKEN" | jq '.results[] | {name, endpoint}'
+
+OR via API Manager UI:
+  Navigate to: Manage → Catalogs → ${CATALOG_NAME} → Settings → Portal
+  Select portal service → set Portal URL → Save
+
+================================================================================
+STEP 8 — PUBLISH APIs TO CATALOG
+================================================================================
+
+# APIs are published to a catalog by wrapping them in a Product and publishing
+# the Product. Products and APIs are created in API Manager (API Studio).
+#
+# PREREQUISITE: Gateway service must be associated to the catalog (STEP 5).
+
+# -- 8a. Via API Manager UI (recommended) --------------------------------------
+
+  1. Login: https://${APIC_MGMT_MANAGER_HOST}/manager
+     Username: ${PORG_OWNER_USERNAME} / Password: ${PORG_OWNER_PASSWORD} / Org: ${PORG_NAME}
+
+  2. Develop → APIs → confirm your API exists (e.g. wM_NoAuth_Weather)
+     IMPORTANT: API info.name must match pattern ^([a-zA-Z0-9._]+(-)*)*([a-zA-Z0-9])$
+     No spaces, no trailing hyphens/underscores. Fix in Source (YAML) view if needed.
+
+  3. Develop → Products → Create or open the Product containing your API
+
+  4. Publish → select catalog (e.g. ADP POC) → Publish
+
+# -- 8b. Check published products/APIs via API --------------------------------
+
+CATALOG_URL=$(curl -sk "https://${APIC_MGMT_PLATFORM_API_HOST}/api/orgs/${PORG_NAME}/catalogs" \
+  -H "Authorization: Bearer $PORG_TOKEN" \
+  | jq -r --arg c "${CATALOG_NAME}" '.results[] | select(.name==$c) | .url')
+
+curl -sk "${CATALOG_URL}/products" \
+  -H "Authorization: Bearer $PORG_TOKEN" \
+  | jq '.results[] | {name, version, title, state}'
+
+curl -sk "${CATALOG_URL}/apis" \
+  -H "Authorization: Bearer $PORG_TOKEN" \
+  | jq '.results[] | {name, version, title}'
+
+================================================================================
+STEP 9 — ACCESS API MANAGER
+================================================================================
+
+# API Manager URL (uses APIC_MGMT_MANAGER_HOST from config.env)
+echo "API Manager URL: https://${APIC_MGMT_MANAGER_HOST}/manager"
+
+# Login with pOrg owner credentials:
+#   Username: ${PORG_OWNER_USERNAME}
+#   Password: ${PORG_OWNER_PASSWORD}
+#   Org:      ${PORG_NAME}  (select from dropdown)
+
+# Or get the API Manager UI endpoint from cluster:
+kubectl get APIConnectCluster -n ${APIC_NAMESPACE} \
+  -o jsonpath='{.items[0].status.endpoints[?(@.name=="ui")].uri}'
+
+================================================================================
+STEP 10 — VERIFY
+================================================================================
+
+# List all provider orgs (admin TOKEN)
+curl -sk "https://${APIC_MGMT_PLATFORM_API_HOST}/api/cloud/orgs" \
+  -H "Authorization: Bearer $TOKEN" \
+  | jq '.results[] | select(.org_type=="provider") | {name, title, state}'
+
+# List catalogs in pOrg (PORG_TOKEN)
+curl -sk "https://${APIC_MGMT_PLATFORM_API_HOST}/api/orgs/${PORG_NAME}/catalogs" \
+  -H "Authorization: Bearer $PORG_TOKEN" \
+  | jq '.results[] | {name, title}'
+
+# List configured gateway services per catalog (PORG_TOKEN + CATALOG_URL from STEP 5)
+curl -sk "${CATALOG_URL}/configured-gateway-services" \
+  -H "Authorization: Bearer $PORG_TOKEN" \
+  | jq '.results[] | {name, gateway_service_url}'
+
+# Full topology view (admin TOKEN)
+curl -sk "https://${APIC_MGMT_PLATFORM_API_HOST}/api/cloud/topology" \
+  -H "Authorization: Bearer $TOKEN" | jq '.'
+
+================================================================================
+TROUBLESHOOTING
+================================================================================
+
+"401 Unauthorized on pOrg API calls"
+  → Ensure PORG_TOKEN is set with realm "provider/default-idp-2" (STEP 3).
+    Admin TOKEN (realm "admin/default-idp-1") cannot be used for pOrg operations.
+
+"The user must belong to a user registry configured in provider settings"
+  → Owner user was created in the wrong registry (Cloud Manager LUR).
+    Delete the user from Cloud Manager LUR and recreate in API Manager LUR (STEP 1).
+
+"Owner not found / invalid owner_url"
+  → Run STEP 1c and confirm OWNER_URL is non-empty before STEP 2.
+    Ensure LUR_URL points to the API Manager LUR (STEP 1a).
+
+"Gateway service not available for catalog"
+  → Gateway must be registered in Cloud Manager first (03/04 guides).
+    Verify: curl .../availability-zones/availability-zone-default/gateway-services
+
+"Portal site already exists"
+  → Each catalog requires a unique portal endpoint URL.
+    Use a different PORTAL_SITE_URL per catalog.
+
+"403 / user lacks permission"
+  → Use pOrg owner credentials (STEP 3). Members with lesser roles cannot
+    modify catalog settings.
+
+================================================================================
+MANAGEMENT REFERENCE — USEFUL QUERIES
+================================================================================
+
+# Get pOrg details (PORG_TOKEN)
+curl -sk "https://${APIC_MGMT_PLATFORM_API_HOST}/api/orgs/${PORG_NAME}" \
+  -H "Authorization: Bearer $PORG_TOKEN" | jq '{name, title, org_type, owner_url}'
+
+# List pOrg members (PORG_TOKEN)
+curl -sk "https://${APIC_MGMT_PLATFORM_API_HOST}/api/orgs/${PORG_NAME}/members" \
+  -H "Authorization: Bearer $PORG_TOKEN" | jq '.results[] | {username:.user.username, role:.role_urls}'
+
+# Add a member to pOrg (PORG_TOKEN)
+MEMBER_USER_URL="<user-url-from-registry>"
+curl -sk -X POST "https://${APIC_MGMT_PLATFORM_API_HOST}/api/orgs/${PORG_NAME}/member-invitations" \
+  -H "Authorization: Bearer $PORG_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"email":"newmember@example.com","role_urls":["<role-url>"]}' | jq .
+
+# Delete a catalog (PORG_TOKEN)
+curl -sk -X DELETE "https://${APIC_MGMT_PLATFORM_API_HOST}/api/orgs/${PORG_NAME}/catalogs/${CATALOG_NAME}" \
+  -H "Authorization: Bearer $PORG_TOKEN" -w "%{http_code}\n" -o /dev/null
+
+# Delete provider org — irreversible, removes all APIs/products/catalogs (admin TOKEN)
+curl -sk -X DELETE "https://${APIC_MGMT_PLATFORM_API_HOST}/api/cloud/orgs/${PORG_NAME}" \
+  -H "Authorization: Bearer $TOKEN" -w "%{http_code}\n" -o /dev/null
+
+================================================================================

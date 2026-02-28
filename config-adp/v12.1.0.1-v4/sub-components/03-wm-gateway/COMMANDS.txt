@@ -1,0 +1,143 @@
+================================================================================
+SUB-COMPONENT: API Gateway (webMethods Gateway)
+================================================================================
+CR Kind:     WMAPIGatewayCluster
+CR Name:     wmapigw
+Namespace:   ${APIC_NAMESPACE}
+Endpoints:
+  Gateway API:  https://${APIC_WM_GATEWAY_HOST}
+  Gateway UI:   https://${APIC_WM_GATEWAY_UI_HOST}
+
+PREREQUISITE: Core deployment must be Running before deploying this component.
+              Management subsystem must be healthy.
+
+================================================================================
+REQUIRED SECRETS (create before deploying CR)
+================================================================================
+
+# wM API Gateway encryption key (random 32-byte base64 key)
+kubectl create secret generic wmapigateway-enc-key \
+  --namespace=${APIC_NAMESPACE} \
+  --from-literal=password=$(openssl rand -base64 32)
+
+# wM API Gateway admin credentials
+kubectl create secret generic wmapigateway-admin-secret \
+  --namespace=${APIC_NAMESPACE} \
+  --from-literal=password=manage
+
+# Verify secrets exist
+kubectl get secret wmapigateway-enc-key wmapigateway-admin-secret -n ${APIC_NAMESPACE}
+
+Note: The mTLS client cert secret (wmapigateway-mgmt-client) is created
+      automatically by cert-manager from 04-ingress-issuer.yaml.
+      Verify: kubectl get secret wmapigateway-mgmt-client -n ${APIC_NAMESPACE}
+
+================================================================================
+DEPLOY
+================================================================================
+
+# 1. Ensure secrets are created (see above)
+
+# 2. Deploy wM API Gateway CR
+kubectl apply -f wm-gateway-cr.yaml -n ${APIC_NAMESPACE}
+
+# 3. Watch status (ctrl+c when phase = Running, takes 5–10 min)
+kubectl get wmapigatewaycluster -n ${APIC_NAMESPACE} -w
+
+# 4. Monitor pods
+kubectl get pods -n ${APIC_NAMESPACE} -l app.kubernetes.io/instance=wmapigw -w
+
+# 5. Apply HTTPProxy ingress
+envsubst < ../../ingress/contour-httpproxy-gateway.yaml.template | kubectl apply -f -
+
+# 6. Verify HTTPProxy
+kubectl get httpproxy -n ${APIC_NAMESPACE} wmapigw-mgmt wmapigw-gateway
+
+================================================================================
+GET-DEPLOYMENT STATUS
+================================================================================
+
+# Subsystem status
+kubectl get wmapigatewaycluster -n ${APIC_NAMESPACE}
+kubectl get wmapigatewaycluster wmapigw -n ${APIC_NAMESPACE} -o jsonpath='{.status.phase}'
+
+# Pod status
+kubectl get pods -n ${APIC_NAMESPACE} -l app.kubernetes.io/instance=wmapigw
+
+# Describe CR for full status
+kubectl describe wmapigatewaycluster wmapigw -n ${APIC_NAMESPACE}
+
+# HTTPProxy status
+kubectl get httpproxy -n ${APIC_NAMESPACE} wmapigw-mgmt wmapigw-gateway
+
+# Service endpoints
+kubectl get svc -n ${APIC_NAMESPACE} | grep wmapigw
+
+# Check TLS certificates
+kubectl get certificate -n ${APIC_NAMESPACE} | grep wmapigw
+kubectl get secret -n ${APIC_NAMESPACE} | grep wmapigw
+
+================================================================================
+DEBUG
+================================================================================
+
+# wM Gateway pod logs
+kubectl logs -n ${APIC_NAMESPACE} -l app.kubernetes.io/instance=wmapigw --tail=100
+
+# Describe pods for events/errors
+kubectl describe pod -n ${APIC_NAMESPACE} -l app.kubernetes.io/instance=wmapigw
+
+# Check events
+kubectl get events -n ${APIC_NAMESPACE} --sort-by='.lastTimestamp' | grep -i wmapigw | tail -20
+
+# Test gateway endpoint
+curl -sk -o /dev/null -w "%{http_code}" https://${APIC_WM_GATEWAY_HOST}
+# Expected: 200 or 404 (gateway running, no APIs published yet)
+
+# Test management UI
+curl -sk -o /dev/null -w "%{http_code}" https://${APIC_WM_GATEWAY_UI_HOST}
+# Expected: 200 or 302
+
+# Check mTLS client cert used by Management → wM Gateway
+kubectl get secret wmapigateway-mgmt-client -n ${APIC_NAMESPACE} -o jsonpath='{.data.tls\.crt}' | \
+  base64 -d | openssl x509 -noout -subject -issuer -dates
+
+# Exec into wM Gateway pod
+kubectl exec -it -n ${APIC_NAMESPACE} $(kubectl get pod -n ${APIC_NAMESPACE} -l app.kubernetes.io/instance=wmapigw -o name | head -1) -- /bin/bash
+
+================================================================================
+DESTROY
+================================================================================
+
+# 1. Delete HTTPProxy
+kubectl delete httpproxy wmapigw-mgmt wmapigw-gateway -n ${APIC_NAMESPACE}
+
+# 2. Delete wM Gateway CR (operator handles cleanup)
+kubectl delete wmapigatewaycluster wmapigw -n ${APIC_NAMESPACE}
+kubectl wait --for=delete wmapigatewaycluster wmapigw -n ${APIC_NAMESPACE} --timeout=300s
+
+# 3. Delete PVCs (if not cleaned up automatically)
+kubectl delete pvc -n ${APIC_NAMESPACE} -l app.kubernetes.io/instance=wmapigw
+
+# 4. Delete secrets (optional — cert-manager secrets will auto-recreate)
+kubectl delete secret wmapigateway-enc-key wmapigateway-admin-secret -n ${APIC_NAMESPACE}
+
+# 5. Verify cleanup
+kubectl get all -n ${APIC_NAMESPACE} -l app.kubernetes.io/instance=wmapigw
+
+================================================================================
+POST-DEPLOYMENT: REGISTER IN APIC CLOUD MANAGER
+================================================================================
+
+After deployment, register the wM API Gateway in Cloud Manager:
+1. Login to https://${APIC_MGMT_ADMIN_HOST}/admin
+2. Navigate to: Topology → Infrastructure → Gateway Services
+3. Click "Register Service"
+4. Fill in:
+   - Title: wM API Gateway
+   - Service endpoint: https://${APIC_WM_GATEWAY_HOST}
+   - Management endpoint: https://${APIC_WM_GATEWAY_UI_HOST}
+   - TLS Client Profile: wmapigateway-mgmt-client-default
+5. Save and verify status shows "Online"
+
+================================================================================

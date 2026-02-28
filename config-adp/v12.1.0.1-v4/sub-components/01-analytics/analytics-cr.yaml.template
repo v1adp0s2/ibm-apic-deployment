@@ -1,0 +1,39 @@
+apiVersion: analytics.apiconnect.ibm.com/v1beta1
+kind: AnalyticsCluster
+metadata:
+  name: analytics
+  namespace: ${APIC_NAMESPACE}
+spec:
+  version: 12.1.0.1
+  license:
+    accept: true
+    use: nonproduction
+    license: L-SBZZ-CNR329
+  profile: n1xc2.m16
+  imagePullSecrets:
+  - harbor-registry-secret
+  imageRegistry: ${APIC_IMAGE_REGISTRY}
+  microServiceSecurity: certManager
+  certManagerIssuer:
+    name: selfsigning-issuer
+    kind: Issuer
+  ingestion:
+    endpoint:
+      ingressClassName: ${APIC_INGRESS_CLASS}
+      annotations:
+        cert-manager.io/issuer: ingress-issuer
+      hosts:
+      - name: ${APIC_ANALYTICS_INGESTION_HOST}
+        secretName: analytics-ai-endpoint
+    clientSubjectDN: CN=analytics-ingestion-client,O=cert-manager
+  mtlsValidateClient: false
+  jwksUrl: https://${APIC_MGMT_PLATFORM_API_HOST}/api/cloud/oauth2/certs
+  analyticsMode: true
+  federatedAPIManagementMode: false
+  devPortalMode: true
+  storage:
+    type: shared
+    shared:
+      volumeClaimTemplate:
+        storageClassName: ${APIC_STORAGE_CLASS}
+        volumeSize: 50Gi

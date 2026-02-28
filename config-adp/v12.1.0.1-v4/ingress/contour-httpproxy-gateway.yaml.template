@@ -1,0 +1,40 @@
+---
+# Gateway Endpoint
+apiVersion: projectcontour.io/v1
+kind: HTTPProxy
+metadata:
+  name: gwv6-gateway
+  namespace: ${APIC_NAMESPACE}
+spec:
+  virtualhost:
+    fqdn: ${APIC_DP_GATEWAY_HOST}
+    tls:
+      secretName: gwv6-endpoint
+  routes:
+  - services:
+    - name: gwv6-datapower
+      port: 9443
+      protocol: tls
+      validation:
+        caSecret: gateway-service
+        subjectName: gwv6-datapower.${APIC_NAMESPACE}.svc.cluster.local
+---
+# Gateway Manager Endpoint
+apiVersion: projectcontour.io/v1
+kind: HTTPProxy
+metadata:
+  name: gwv6-gateway-manager
+  namespace: ${APIC_NAMESPACE}
+spec:
+  virtualhost:
+    fqdn: ${APIC_DP_GATEWAY_MANAGER_HOST}
+    tls:
+      secretName: gwv6-manager-endpoint
+  routes:
+  - services:
+    - name: gwv6-datapower
+      port: 3000
+      protocol: tls
+      validation:
+        caSecret: gateway-service
+        subjectName: gwv6-datapower.${APIC_NAMESPACE}.svc.cluster.local
