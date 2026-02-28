@@ -16,6 +16,13 @@ spec:
     hosts:
     - name: ai.DNS_PLACEHOLDER
       secretName: analytics-ai-endpoint
+  ingestion:
+    queue:
+      type: persisted
+      defaultQueueSize: 8Gi
+      volumeClaimTemplate:
+        storageClassName: STORAGE_CLASS_PLACEHOLDER
+        volumeSize: 50Gi
   storage:
     data:
       storageClassName: STORAGE_CLASS_PLACEHOLDER
